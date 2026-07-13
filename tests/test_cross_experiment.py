@@ -2,14 +2,17 @@ import json
 import subprocess
 import sys
 
+import numpy as np
 import pandas as pd
 import pytest
 
 from streaming_rl_feature_geometry.cross_experiment import (
+    _controller_state,
     _read_many,
     load_cross_config,
     run_cross_one,
 )
+from streaming_rl_feature_geometry.cross_metrics import task_information_metrics
 
 
 def tiny_cross_config(tmp_path):
@@ -92,6 +95,18 @@ def test_common_runner_writes_isolated_complete_environment_runs(tmp_path, envir
     assert summary["environment"] == environment and summary["run_status"] == "ok"
     manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["environment"] == environment and manifest["exit_status"] == "ok"
+    decisions = pd.read_csv(run_dir / "decision_metrics.csv")
+    assert set(decisions.columns) == {
+        "t",
+        "environment",
+        "condition",
+        "seed",
+        "group",
+        "position",
+        "correct",
+        "moving_accuracy",
+        "reward",
+    }
     with pytest.raises(FileExistsError):
         run_cross_one((config, environment, "raw", 0, str(root)))
 
@@ -136,6 +151,30 @@ def test_repository_cross_configs_load_and_preserve_three_pilot_seeds():
     assert all("matched" in spec["conditions"] for spec in pilot["environments"].values())
 
 
+def test_non_oracle_controller_state_cannot_read_oracle_features():
+    class DiagnosticOnlyOracle:
+        @property
+        def oracle_features(self):
+            raise AssertionError("non-oracle agent attempted to read diagnostic oracle state")
+
+    transformed = np.asarray([1.0, 2.0])
+    assert _controller_state("observation_only", DiagnosticOnlyOracle(), transformed).size == 0
+    assert (_controller_state("matched", DiagnosticOnlyOracle(), transformed) == transformed).all()
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    (("seeds", [0, 0]), ("horizons", [0.9, 0.9]), ("horizons", [1.0])),
+)
+def test_cross_config_rejects_duplicate_or_noncausal_axes(tmp_path, key, value):
+    config = tiny_cross_config(tmp_path)
+    config[key] = value
+    path = tmp_path / f"bad-{key}.json"
+    path.write_text(json.dumps(config), encoding="utf-8")
+    with pytest.raises(ValueError):
+        load_cross_config(path)
+
+
 def test_cross_aggregation_reader_skips_structurally_empty_tables(tmp_path):
     empty = tmp_path / "empty.csv"
     empty.write_text("\n", encoding="utf-8")
@@ -143,3 +182,36 @@ def test_cross_aggregation_reader_skips_structurally_empty_tables(tmp_path):
     pd.DataFrame([{"value": 3.0}]).to_csv(populated, index=False)
     frame = _read_many([empty, populated])
     assert frame.to_dict(orient="records") == [{"value": 3.0}]
+
+
+@pytest.mark.parametrize(
+    ("environment", "latent_dim"),
+    (("ringworld", 2), ("two_loop", 3), ("hidden_velocity", 2)),
+)
+def test_grouped_task_probes_return_finite_fallback_when_groups_are_insufficient(
+    environment, latent_dim
+):
+    features = np.ones((20, 4))
+    latents = np.zeros((20, latent_dim))
+    groups = np.zeros(20, dtype=int)
+    metrics, payload = task_information_metrics(
+        environment, features, latents, groups, seed=3
+    )
+    assert all(np.isfinite(value) for value in metrics.values())
+    assert payload == {}
+
+
+def test_ringworld_neighborhood_metric_rewards_ordered_circular_features():
+    angles = np.linspace(-np.pi, np.pi, 80, endpoint=False)
+    features = np.column_stack((np.cos(angles), np.sin(angles)))
+    latents = np.column_stack((np.arange(len(angles)), angles))
+    groups = np.arange(len(angles))
+    ordered, _ = task_information_metrics(
+        "ringworld", features, latents, groups, seed=7
+    )
+    permutation = np.random.default_rng(9).permutation(len(features))
+    shuffled, _ = task_information_metrics(
+        "ringworld", features[permutation], latents, groups, seed=7
+    )
+    assert ordered["neighborhood_preservation"] > 0.8
+    assert ordered["neighborhood_preservation"] > shuffled["neighborhood_preservation"]

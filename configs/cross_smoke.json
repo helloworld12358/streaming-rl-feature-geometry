@@ -7,6 +7,8 @@
       "conditions": ["observation_only", "oracle", "raw", "whitened", "matched"],
       "bank": "mixed",
       "kwargs": {"corridor_length": 5},
+      "oracle_minimum": 0.75,
+      "oracle_gap": 0.10,
       "threshold": 0.8
     },
     "ringworld": {
@@ -14,6 +16,8 @@
       "conditions": ["observation_only", "oracle", "raw", "whitened", "matched"],
       "bank": "mixed",
       "kwargs": {"size": 12},
+      "oracle_minimum": 0.75,
+      "oracle_gap": 0.10,
       "threshold": 0.8
     },
     "two_loop": {
@@ -21,6 +25,8 @@
       "conditions": ["observation_only", "oracle", "raw", "whitened", "matched"],
       "bank": "mixed",
       "kwargs": {"loop_lengths": [8, 10]},
+      "oracle_minimum": 0.75,
+      "oracle_gap": 0.10,
       "threshold": 0.8
     },
     "hidden_velocity": {
@@ -30,6 +36,9 @@
       "kwargs": {"noise_std": 0.015},
       "control_alpha": 0.002,
       "gamma": 0.95,
+      "oracle_metric": "mean_reward",
+      "oracle_minimum": -0.50,
+      "oracle_gap": 0.05,
       "threshold": -0.3
     }
   },

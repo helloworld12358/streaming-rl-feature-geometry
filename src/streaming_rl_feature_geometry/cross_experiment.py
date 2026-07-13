@@ -561,14 +561,17 @@ def smoke_cross_assertions(root: str | Path, config: dict[str, Any]) -> None:
     summaries = pd.read_csv(Path(root) / "aggregate_summary.csv")
     for environment in config["environments"]:
         frame = summaries[summaries["environment"] == environment]
-        oracle = frame.query("condition == 'oracle'")["final_performance"].mean()
-        observation = frame.query("condition == 'observation_only'")["final_performance"].mean()
         spec = config["environments"][environment]
+        oracle_metric = str(spec.get("oracle_metric", "final_performance"))
+        if oracle_metric not in frame.columns:
+            raise AssertionError(f"unknown oracle sanity metric {oracle_metric!r}")
+        oracle = frame.query("condition == 'oracle'")[oracle_metric].mean()
+        observation = frame.query("condition == 'observation_only'")[oracle_metric].mean()
         minimum = float(spec.get("oracle_minimum", -np.inf))
         gap = float(spec.get("oracle_gap", 0.0))
         if oracle < minimum:
             raise AssertionError(
-                f"{environment} oracle performance {oracle:.4f} is below {minimum:.4f}"
+                f"{environment} oracle {oracle_metric} {oracle:.4f} is below {minimum:.4f}"
             )
         if oracle <= observation + gap:
             raise AssertionError(f"{environment} oracle did not outperform observation-only")

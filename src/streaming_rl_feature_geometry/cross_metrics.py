@@ -68,8 +68,10 @@ def ridge_probe(
     targets = np.asarray(targets, dtype=np.float64)
     if targets.ndim == 1:
         targets = targets[:, None]
+    if features.ndim != 2 or len(features) != len(targets) or features.shape[1] == 0:
+        return {"probe_mse": 0.0, "probe_r2": 0.0}, np.empty_like(targets[:0]), np.empty_like(targets[:0])
     split = _group_split(np.asarray(groups), seed)
-    if split is None or len(features) != len(targets) or features.shape[1] == 0:
+    if split is None:
         return {"probe_mse": 0.0, "probe_r2": 0.0}, np.empty_like(targets[:0]), np.empty_like(targets[:0])
     train, test = split
     mean = features[train].mean(axis=0)
@@ -109,20 +111,30 @@ def task_information_metrics(
         angle = latents[:, 1]
         targets = np.column_stack((np.cos(angle), np.sin(angle)))
         probe, truth, predictions = ridge_probe(features, targets, groups, seed)
+        if not len(truth):
+            return {
+                "phase_mse": 0.0,
+                "phase_r2": 0.0,
+                "phase_absolute_error": float(np.pi),
+                "circular_correlation": 0.0,
+                "neighborhood_preservation": 0.0,
+                "task_decodability": 0.0,
+            }, payload
         true_angle = np.arctan2(truth[:, 1], truth[:, 0])
         pred_angle = np.arctan2(predictions[:, 1], predictions[:, 0])
         error = np.angle(np.exp(1j * (pred_angle - true_angle)))
-        correlation = (
-            float(np.corrcoef(truth.ravel(), predictions.ravel())[0, 1])
-            if np.std(truth) > 1e-12 and np.std(predictions) > 1e-12
-            else 0.0
+        phase_order = np.argsort(true_angle)
+        ordered_prediction = pred_angle[phase_order]
+        adjacent_difference = np.angle(
+            np.exp(1j * (np.roll(ordered_prediction, -1) - ordered_prediction))
         )
+        neighborhood = float(np.mean(np.cos(adjacent_difference)))
         metrics = {
             "phase_mse": probe["probe_mse"],
             "phase_r2": probe["probe_r2"],
             "phase_absolute_error": float(np.mean(np.abs(error))),
             "circular_correlation": float(np.mean(np.cos(error))),
-            "neighborhood_preservation": correlation,
+            "neighborhood_preservation": neighborhood,
             "task_decodability": float(np.mean(np.cos(error))),
         }
         payload.update(true_phase=true_angle, predicted_phase=pred_angle)
@@ -133,6 +145,16 @@ def task_information_metrics(
         angle = latents[:, 2]
         targets = np.column_stack((np.cos(angle), np.sin(angle)))
         probe, truth, predictions = ridge_probe(features, targets, groups, seed + 1)
+        if not len(truth):
+            return {
+                "identity_decodability": cue_metrics["cue_decodability"],
+                "identity_margin": cue_metrics["cue_margin"],
+                "phase_mse": 0.0,
+                "phase_r2": 0.0,
+                "phase_absolute_error": float(np.pi),
+                "joint_state_decodability": 0.0,
+                "task_decodability": cue_metrics["cue_decodability"],
+            }, payload
         true_angle = np.arctan2(truth[:, 1], truth[:, 0])
         pred_angle = np.arctan2(predictions[:, 1], predictions[:, 0])
         error = np.angle(np.exp(1j * (pred_angle - true_angle)))
@@ -151,6 +173,13 @@ def task_information_metrics(
         return metrics, payload
     if environment == "hidden_velocity":
         probe, truth, predictions = ridge_probe(features, latents[:, 1], groups, seed)
+        if not len(truth):
+            return {
+                "velocity_decoding_mse": 0.0,
+                "velocity_decoding_r2": 0.0,
+                "state_estimation_error": 0.0,
+                "task_decodability": 0.0,
+            }, payload
         metrics = {
             "velocity_decoding_mse": probe["probe_mse"],
             "velocity_decoding_r2": probe["probe_r2"],
