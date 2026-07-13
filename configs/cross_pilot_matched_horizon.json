@@ -1,0 +1,25 @@
+{
+  "profile": "cross_pilot_matched_horizon",
+  "seeds": [0, 1, 2],
+  "environments": {
+    "tmaze": {"interactions": 6000, "conditions": ["raw", "matched"], "bank": "mixed", "kwargs": {"corridor_length": 5}, "threshold": 0.8},
+    "ringworld": {"interactions": 6000, "conditions": ["raw", "matched"], "bank": "mixed", "kwargs": {"size": 12}, "threshold": 0.8}
+  },
+  "horizons": [0.65, 0.9],
+  "trace_dim": 16,
+  "predictive_alpha": 0.006,
+  "control_alpha": 0.006,
+  "gamma": 0.98,
+  "lambda": 0.8,
+  "epsilon": 0.05,
+  "transform_eps": 0.001,
+  "transform_min_samples": 96,
+  "cov_update_every": 75,
+  "metrics_stride": 50,
+  "analysis_burn_in": 600,
+  "reservoir_size": 3000,
+  "moving_window": 150,
+  "final_window": 400,
+  "workers": 4,
+  "output_dir": "results/cross_pilot_matched_horizon"
+}

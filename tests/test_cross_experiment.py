@@ -147,7 +147,9 @@ def test_repository_cross_configs_load_and_preserve_three_pilot_seeds():
     smoke = load_cross_config("configs/cross_smoke.json")
     pilot = load_cross_config("configs/cross_pilot.json")
     compact = load_cross_config("configs/cross_pilot_compact.json")
+    mixed = load_cross_config("configs/cross_pilot_bank_mixed.json")
     short = load_cross_config("configs/cross_pilot_short_horizon.json")
+    matched_horizon = load_cross_config("configs/cross_pilot_matched_horizon.json")
     remote_paths = [
         "configs/cross_full.json",
         "configs/cross_full_compact.json",
@@ -160,8 +162,22 @@ def test_repository_cross_configs_load_and_preserve_three_pilot_seeds():
     assert all("matched" in spec["conditions"] for spec in pilot["environments"].values())
     assert compact["seeds"] == short["seeds"] == [0, 1, 2]
     assert all(spec["bank"] == "compact" for spec in compact["environments"].values())
+    assert {
+        environment: spec["interactions"]
+        for environment, spec in compact["environments"].items()
+    } == {
+        environment: spec["interactions"]
+        for environment, spec in mixed["environments"].items()
+    }
     assert set(short["environments"]) == {"tmaze", "ringworld"}
     assert short["horizons"] == [0.2, 0.4]
+    assert {
+        environment: spec["interactions"]
+        for environment, spec in short["environments"].items()
+    } == {
+        environment: spec["interactions"]
+        for environment, spec in matched_horizon["environments"].items()
+    }
     assert all(config["remote_full"] and len(config["seeds"]) == 20 for config in remote)
 
 
