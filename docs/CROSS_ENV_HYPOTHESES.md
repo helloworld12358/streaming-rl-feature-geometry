@@ -2,7 +2,9 @@
 
 **Timestamp:** 2026-07-13, Asia/Shanghai  
 **Status before first cross-environment multi-seed pilot:** working tree dirty only with the normative extension specification and preregistration documents; no cross-environment pilot has run.  
-**Core base:** `f880b4977278016c25f3180b10a2206115be99f2`
+**Core base:** `f880b4977278016c25f3180b10a2206115be99f2`  
+**Frozen implementation checkpoint before pilot:** `f40284c` with clean working tree; no cross-environment multi-seed result had been generated.  
+**Pre-pilot property gate:** `results/diagnostics/cross_environment/preregistered-20260713-v1`, 17/17 synthetic and real-stream checks passed.
 
 These hypotheses are directional research expectations, not acceptance tests. Environment correctness, property fulfillment, uncertainty, and negative results take priority over confirmation.
 
