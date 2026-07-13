@@ -1,0 +1,41 @@
+name: Full remote experiment
+on:
+  workflow_dispatch:
+    inputs:
+      profile: {description: 'Experiment profile', required: true, default: 'full', type: choice, options: ['validation','full']}
+      seeds: {description: 'Comma-separated seeds override', required: false, default: ''}
+      interactions: {description: 'Interaction budget override', required: false, default: ''}
+      workers: {description: 'CPU workers', required: true, default: '4'}
+      run_name: {description: 'Result run name', required: true, default: 'manual-remote'}
+      ref: {description: 'Commit SHA or branch', required: false, default: ''}
+jobs:
+  full-remote:
+    runs-on: [self-hosted, linux, x64, rl-cloud]
+    env:
+      RL_RUN_CONTEXT: remote
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.11'}
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e . -r requirements.txt
+      - name: Record machine
+        run: |
+          mkdir -p results/${{ inputs.run_name }}
+          python --version | tee results/${{ inputs.run_name }}/python_version.txt
+          pip freeze | tee results/${{ inputs.run_name }}/pip_freeze.txt
+          hostname | tee results/${{ inputs.run_name }}/hostname.txt
+          lscpu | tee results/${{ inputs.run_name }}/cpu.txt
+          git rev-parse HEAD | tee results/${{ inputs.run_name }}/commit.txt
+          git branch --show-current | tee results/${{ inputs.run_name }}/branch.txt
+      - name: Run experiment
+        run: |
+          CONFIG=configs/${{ inputs.profile }}.json
+          python scripts/run_experiment.py --config "$CONFIG" --workers ${{ inputs.workers }} --output-dir results/${{ inputs.run_name }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ${{ inputs.run_name }}-${{ github.sha }}-${{ inputs.profile }}
+          path: results/${{ inputs.run_name }}
