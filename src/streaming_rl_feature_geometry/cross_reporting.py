@@ -29,8 +29,13 @@ PALETTE = {
 ENVIRONMENTS = ("tmaze", "ringworld", "two_loop", "hidden_velocity")
 
 
-def _finish(fig: plt.Figure, path: Path) -> None:
-    fig.tight_layout()
+def _finish(
+    fig: plt.Figure,
+    path: Path,
+    *,
+    rect: tuple[float, float, float, float] | None = None,
+) -> None:
+    fig.tight_layout(rect=rect)
     fig.savefig(path, dpi=160, bbox_inches="tight")
     plt.close(fig)
 
@@ -65,7 +70,11 @@ def _faceted_learning_curves(steps: pd.DataFrame, figures: Path) -> None:
         ncol=min(6, max(1, len(labels))),
     )
     fig.suptitle("Cross-environment control learning curves (mean ± SEM)", y=1.0)
-    _finish(fig, figures / "control_learning_curves_by_environment.png")
+    _finish(
+        fig,
+        figures / "control_learning_curves_by_environment.png",
+        rect=(0.0, 0.13, 1.0, 0.96),
+    )
 
 
 def _faceted_bars(summary: pd.DataFrame, figures: Path, conditions: set[str] | None, name: str) -> None:
@@ -115,7 +124,7 @@ def _scatter_by_metric(joined: pd.DataFrame, metric: str, path: Path, xlabel: st
         handles, labels, loc="lower center", bbox_to_anchor=(0.5, -0.02),
         ncol=min(6, max(1, len(labels))),
     )
-    _finish(fig, path)
+    _finish(fig, path, rect=(0.0, 0.12, 1.0, 1.0))
 
 
 def _moment_relationship(joined: pd.DataFrame, figures: Path) -> None:
@@ -139,7 +148,11 @@ def _moment_relationship(joined: pd.DataFrame, figures: Path) -> None:
         ncol=min(6, len(labels)),
     )
     fig.suptitle("Moment error versus control performance", y=1.0)
-    _finish(fig, figures / "moment_error_vs_control_performance.png")
+    _finish(
+        fig,
+        figures / "moment_error_vs_control_performance.png",
+        rect=(0.0, 0.13, 1.0, 0.96),
+    )
 
 
 def _update_stability(updates: pd.DataFrame, figures: Path) -> None:
@@ -181,7 +194,11 @@ def _eigen_spectra(representation: pd.DataFrame, figures: Path) -> None:
         ncol=min(6, max(1, len(labels))),
     )
     fig.suptitle("Representation covariance eigenvalue spectra", y=1.0)
-    _finish(fig, figures / "covariance_eigenvalue_spectra.png")
+    _finish(
+        fig,
+        figures / "covariance_eigenvalue_spectra.png",
+        rect=(0.0, 0.12, 1.0, 0.96),
+    )
 
 
 def _property_heatmap(representation: pd.DataFrame, figures: Path) -> None:
@@ -226,24 +243,46 @@ def _environment_geometry(root: Path, figures: Path) -> None:
         if payload is None or not len(payload["features"]):
             ax.set_visible(False)
             continue
-        projection = _pca(payload["features"])
-        color = payload["latents"][:, -1]
-        scatter = ax.scatter(projection[:, 0], projection[:, 1], c=color, cmap="twilight", s=8, alpha=0.6)
+        if environment in {"tmaze", "ringworld", "two_loop"}:
+            projection = payload["features"][:, :2]
+            x_label, y_label = "Matched coordinate 1", "Matched coordinate 2"
+        else:
+            projection = _pca(payload["features"])
+            x_label, y_label = "Representation PC1", "Representation PC2"
+        if environment == "tmaze":
+            color = payload["latents"][:, 0]
+            cmap = "coolwarm"
+            color_label = "True cue (diagnostic only)"
+        elif environment == "two_loop":
+            color = payload["latents"][:, 0]
+            cmap = "coolwarm"
+            color_label = "True loop identity (diagnostic only)"
+        else:
+            color = payload["latents"][:, -1]
+            cmap = "twilight"
+            color_label = "True phase/velocity (diagnostic only)"
+        scatter = ax.scatter(
+            projection[:, 0], projection[:, 1], c=color, cmap=cmap, s=8, alpha=0.6
+        )
         ax.set_title(environment)
-        ax.set_xlabel("Representation PC1")
-        ax.set_ylabel("Representation PC2")
-        fig.colorbar(scatter, ax=ax, fraction=0.046)
+        ax.set_xlabel(x_label)
+        ax.set_ylabel(y_label)
+        fig.colorbar(scatter, ax=ax, fraction=0.046, label=color_label)
     fig.suptitle("Environment-specific latent geometry in matched representations", y=1.01)
     _finish(fig, figures / "environment_specific_latent_geometry.png")
 
     tmaze = payloads["tmaze"]
     if tmaze is not None:
-        projection = _pca(tmaze["features"])
+        projection = tmaze["features"][:, :2]
         fig, ax = plt.subplots(figsize=(7, 5))
         cue = tmaze["latents"][:, 0]
         ax.scatter(projection[cue < 0, 0], projection[cue < 0, 1], s=10, alpha=0.5, label="left")
         ax.scatter(projection[cue > 0, 0], projection[cue > 0, 1], s=10, alpha=0.5, label="right")
-        ax.set(title="E1 cue clusters from held-out diagnostic samples", xlabel="PC1", ylabel="PC2")
+        ax.set(
+            title="E1 cue clusters from held-out diagnostic samples",
+            xlabel="Simplex coordinate 1",
+            ylabel="Simplex coordinate 2",
+        )
         ax.legend()
         _finish(fig, figures / "e1_cue_clusters.png")
 
