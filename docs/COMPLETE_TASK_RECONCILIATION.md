@@ -94,6 +94,10 @@ These are three-seed pilot observations. They were documented after frozen execu
 Prepared configs:
 
 - `configs/cross_full.json`
+- `configs/cross_full_tmaze.json`
+- `configs/cross_full_ringworld.json`
+- `configs/cross_full_two_loop.json`
+- `configs/cross_full_hidden_velocity.json`
 - `configs/cross_full_compact.json`
 - `configs/cross_full_short_horizon.json`
 - `configs/cross_full_nonstationary.json`
