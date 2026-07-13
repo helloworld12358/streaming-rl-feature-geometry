@@ -1,0 +1,55 @@
+{
+  "profile": "cross_smoke",
+  "seeds": [0],
+  "environments": {
+    "tmaze": {
+      "interactions": 3000,
+      "conditions": ["observation_only", "oracle", "raw", "whitened", "matched"],
+      "bank": "mixed",
+      "kwargs": {"corridor_length": 5},
+      "threshold": 0.8
+    },
+    "ringworld": {
+      "interactions": 3500,
+      "conditions": ["observation_only", "oracle", "raw", "whitened", "matched"],
+      "bank": "mixed",
+      "kwargs": {"size": 12},
+      "threshold": 0.8
+    },
+    "two_loop": {
+      "interactions": 4000,
+      "conditions": ["observation_only", "oracle", "raw", "whitened", "matched"],
+      "bank": "mixed",
+      "kwargs": {"loop_lengths": [8, 10]},
+      "threshold": 0.8
+    },
+    "hidden_velocity": {
+      "interactions": 5000,
+      "conditions": ["observation_only", "oracle", "raw", "whitened", "matched"],
+      "bank": "mixed",
+      "kwargs": {"noise_std": 0.015},
+      "control_alpha": 0.002,
+      "gamma": 0.95,
+      "threshold": -0.3
+    }
+  },
+  "horizons": [0.65, 0.9],
+  "trace_dim": 16,
+  "predictive_alpha": 0.006,
+  "control_alpha": 0.006,
+  "gamma": 0.98,
+  "lambda": 0.8,
+  "epsilon": 0.08,
+  "transform_eps": 0.001,
+  "transform_min_samples": 64,
+  "cov_update_every": 50,
+  "moment_beta": 0.005,
+  "moment_learning_rate": 0.0005,
+  "metrics_stride": 25,
+  "analysis_burn_in": 300,
+  "reservoir_size": 2000,
+  "moving_window": 80,
+  "final_window": 200,
+  "workers": 4,
+  "output_dir": "results/cross_smoke"
+}

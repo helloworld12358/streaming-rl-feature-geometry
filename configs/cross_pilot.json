@@ -1,0 +1,55 @@
+{
+  "profile": "cross_pilot",
+  "seeds": [0, 1, 2],
+  "environments": {
+    "tmaze": {
+      "interactions": 12000,
+      "conditions": ["observation_only", "oracle", "raw", "rms_raw", "standardized", "whitened", "gaussian_moment", "unit_sphere", "sparse", "matched"],
+      "bank": "mixed",
+      "kwargs": {"corridor_length": 5},
+      "threshold": 0.8
+    },
+    "ringworld": {
+      "interactions": 12000,
+      "conditions": ["observation_only", "oracle", "raw", "rms_raw", "standardized", "whitened", "gaussian_moment", "unit_sphere", "sparse", "matched"],
+      "bank": "mixed",
+      "kwargs": {"size": 12},
+      "threshold": 0.8
+    },
+    "two_loop": {
+      "interactions": 14000,
+      "conditions": ["observation_only", "oracle", "raw", "rms_raw", "standardized", "whitened", "gaussian_moment", "unit_sphere", "sparse", "matched"],
+      "bank": "mixed",
+      "kwargs": {"loop_lengths": [8, 10]},
+      "threshold": 0.8
+    },
+    "hidden_velocity": {
+      "interactions": 18000,
+      "conditions": ["observation_only", "oracle", "raw", "rms_raw", "standardized", "whitened", "gaussian_moment", "unit_sphere", "sparse", "matched"],
+      "bank": "mixed",
+      "kwargs": {"noise_std": 0.015},
+      "control_alpha": 0.002,
+      "gamma": 0.95,
+      "threshold": -0.3
+    }
+  },
+  "horizons": [0.65, 0.9],
+  "trace_dim": 16,
+  "predictive_alpha": 0.006,
+  "control_alpha": 0.006,
+  "gamma": 0.98,
+  "lambda": 0.8,
+  "epsilon": 0.05,
+  "transform_eps": 0.001,
+  "transform_min_samples": 96,
+  "cov_update_every": 75,
+  "moment_beta": 0.005,
+  "moment_learning_rate": 0.0005,
+  "metrics_stride": 50,
+  "analysis_burn_in": 1000,
+  "reservoir_size": 5000,
+  "moving_window": 150,
+  "final_window": 500,
+  "workers": 4,
+  "output_dir": "results/cross_pilot"
+}
