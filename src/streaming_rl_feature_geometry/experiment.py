@@ -563,6 +563,8 @@ def validate_results(
         "transform_matrix_change_mean",
         "transform_matrix_change_max",
         "transform_refreshes",
+        "active_fraction",
+        "bounded_max_abs",
     }
     gaussian_transform_metrics = {
         "gaussian_parameter_change_mean",
