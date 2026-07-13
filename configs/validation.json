@@ -1,0 +1,1 @@
+{"profile":"validation","seeds":[0,1],"conditions":["observation","oracle","raw","standardized","decorrelated","whitened","gaussian"],"total_interactions":1800,"corridor_length":4,"horizons":[0.45,0.7,0.88],"gvf_alpha":0.03,"control_alpha":0.03,"gamma":0.98,"lambda":0.8,"epsilon":0.08,"transform_eps":0.001,"cov_update_every":5,"workers":2,"output_dir":"results/validation"}

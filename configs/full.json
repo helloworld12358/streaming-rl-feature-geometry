@@ -1,0 +1,1 @@
+{"profile":"full","seeds":[0,1,2,3,4,5,6,7,8,9],"conditions":["observation","oracle","raw","standardized","decorrelated","whitened","gaussian"],"total_interactions":50000,"corridor_length":6,"horizons":[0.45,0.7,0.88],"gvf_alpha":0.02,"control_alpha":0.02,"gamma":0.99,"lambda":0.8,"epsilon":0.05,"transform_eps":0.001,"cov_update_every":10,"workers":4,"output_dir":"results/full"}
