@@ -1,7 +1,3 @@
 # Experiment summary
 
-Current status: implementation and local smoke/validation scaffolding are complete. Full remote run is not executed in this environment because no remote server or self-hosted runner credentials are available.
-
-Expected analysis compares final-window accuracy, cumulative reward, GVF TD error, cue decodability, covariance condition number, effective rank, isotropy error, high-order moment errors, and update norms across feature-property conditions.
-
-Known limitations: the recurrent state uses a fixed linear trace-memory fallback, and approximate Gaussian matching is a simple signed-power moment-shaping extension that cannot guarantee a full isotropic Gaussian distribution.
+The audited implementation, diagnostics, compliant smoke, and three-seed pilot are documented in [`docs/implementation_report.md`](docs/implementation_report.md). The pilot result is `results/pilot/preregistered-pilot-20260713-v3` at commit `e5f31cc7bbed5faf1a64d393708a0b5790a41a2a`. Remote full experiments remain unrun.

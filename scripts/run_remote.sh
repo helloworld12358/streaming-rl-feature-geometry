@@ -1,22 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROFILE="${1:-full}"
-RUN_NAME="${2:-${PROFILE}-$(date -u +%Y%m%dT%H%M%SZ)}"
+# Backward-compatible wrapper retained from PR #1. New automation should call
+# bootstrap_remote.sh and run_full_remote.sh directly.
+PROFILE="${1:-}"
+RUN_NAME="${2:-}"
 WORKERS="${WORKERS:-4}"
+ALLOW="${3:-}"
 
-if [[ "$PROFILE" != "validation" && "$PROFILE" != "full" ]]; then
-  echo "profile must be validation or full" >&2
+if [[ "$PROFILE" != "full_stationary" && "$PROFILE" != "full_nonstationary" ]]; then
+  echo "Usage: RL_RUN_CONTEXT=remote $0 {full_stationary|full_nonstationary} RUN_NAME --allow-full-run" >&2
+  exit 2
+fi
+if [[ -z "$RUN_NAME" || "$ALLOW" != "--allow-full-run" ]]; then
+  echo "RUN_NAME and explicit --allow-full-run are required." >&2
   exit 2
 fi
 
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -e . -r requirements.txt
-python -m pytest -q
-export RL_RUN_CONTEXT=remote
-python scripts/run_experiment.py \
+exec scripts/run_full_remote.sh \
+  --allow-full-run \
   --config "configs/${PROFILE}.json" \
   --workers "$WORKERS" \
   --run-name "$RUN_NAME"
