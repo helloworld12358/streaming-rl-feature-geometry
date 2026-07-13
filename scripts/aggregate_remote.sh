@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CONFIG=""
+RUN_DIR=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --config) CONFIG="$2"; shift 2 ;;
+    --run-dir) RUN_DIR="$2"; shift 2 ;;
+    *) echo "Unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+
+if [[ -z "$CONFIG" || -z "$RUN_DIR" ]]; then
+  echo "Usage: $0 --config CONFIG --run-dir RESULT_DIR" >&2
+  exit 2
+fi
+if [[ "${RL_RUN_CONTEXT:-}" != "remote" ]]; then
+  echo "RL_RUN_CONTEXT=remote is required for full-result aggregation." >&2
+  exit 2
+fi
+
+cd "$(dirname "$0")/.."
+source .venv/bin/activate
+
+python - "$CONFIG" "$RUN_DIR" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+config = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+root = Path(sys.argv[2])
+missing = []
+failed = []
+for condition in config["conditions"]:
+    for seed in config["seeds"]:
+        run_dir = root / "runs" / condition / f"seed_{seed:03d}"
+        manifest_path = run_dir / "manifest.json"
+        if not manifest_path.exists():
+            missing.append(f"{condition}/seed_{seed:03d}")
+            continue
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if manifest.get("exit_status") != "ok":
+            failed.append(f"{condition}/seed_{seed:03d}:{manifest.get('exit_status')}")
+if missing:
+    print("Missing seeds/runs:", *missing, sep="\n  ", file=sys.stderr)
+if failed:
+    print("Failed seeds/runs:", *failed, sep="\n  ", file=sys.stderr)
+if missing or failed:
+    raise SystemExit(1)
+print(f"Completeness check passed: {len(config['conditions']) * len(config['seeds'])} runs")
+PY
+
+python scripts/run_experiment.py \
+  --config "$CONFIG" \
+  --allow-full-run \
+  --aggregate-only \
+  --output-dir "$RUN_DIR"
+python scripts/validate_results.py "$RUN_DIR" --config "$CONFIG"
+tar -czf "${RUN_DIR%/}.tar.gz" -C "$(dirname "$RUN_DIR")" "$(basename "$RUN_DIR")"
+echo "Validated aggregate and package: ${RUN_DIR%/}.tar.gz"

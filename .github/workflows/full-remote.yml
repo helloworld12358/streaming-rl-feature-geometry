@@ -1,16 +1,42 @@
 name: Full remote experiment
+
 on:
   workflow_dispatch:
     inputs:
-      profile: {description: 'Experiment profile', required: true, default: 'full', type: choice, options: ['validation','full']}
-      seeds: {description: 'Comma-separated seeds override', required: false, default: ''}
-      interactions: {description: 'Interaction budget override', required: false, default: ''}
-      workers: {description: 'CPU workers', required: true, default: '4'}
-      run_name: {description: 'Result run name', required: true, default: 'manual-remote'}
-      ref: {description: 'Commit SHA or branch', required: false, default: ''}
+      profile:
+        description: Experiment profile
+        required: true
+        default: full_stationary
+        type: choice
+        options: [full_stationary, full_nonstationary]
+      seeds:
+        description: Comma-separated seeds override
+        required: false
+        default: ""
+      interactions:
+        description: Interaction budget override
+        required: false
+        default: ""
+      workers:
+        description: CPU workers
+        required: true
+        default: "4"
+      run_name:
+        description: Result run name (letters, digits, dot, underscore, hyphen)
+        required: true
+        default: manual-remote
+      ref:
+        description: Exact commit SHA or branch; defaults to the triggering revision
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
 jobs:
   full-remote:
     runs-on: [self-hosted, linux, x64, rl-cloud]
+    timeout-minutes: 1440
     env:
       RL_RUN_CONTEXT: remote
     steps:
@@ -18,24 +44,42 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
       - uses: actions/setup-python@v5
-        with: {python-version: '3.11'}
+        with:
+          python-version: "3.11"
+          cache: pip
       - run: python -m pip install --upgrade pip
-      - run: python -m pip install -e . -r requirements.txt
-      - name: Record machine
-        run: |
-          mkdir -p results/${{ inputs.run_name }}
-          python --version | tee results/${{ inputs.run_name }}/python_version.txt
-          pip freeze | tee results/${{ inputs.run_name }}/pip_freeze.txt
-          hostname | tee results/${{ inputs.run_name }}/hostname.txt
-          lscpu | tee results/${{ inputs.run_name }}/cpu.txt
-          git rev-parse HEAD | tee results/${{ inputs.run_name }}/commit.txt
-          git branch --show-current | tee results/${{ inputs.run_name }}/branch.txt
+      - run: python -m pip install -e ".[dev]"
+      - run: python -m pytest -q
       - name: Run experiment
+        shell: bash
         run: |
-          CONFIG=configs/${{ inputs.profile }}.json
-          python scripts/run_experiment.py --config "$CONFIG" --workers ${{ inputs.workers }} --output-dir results/${{ inputs.run_name }}
+          args=(
+            --config "configs/${{ inputs.profile }}.json"
+            --allow-full-run
+            --workers "${{ inputs.workers }}"
+            --run-name "${{ inputs.run_name }}"
+          )
+          if [[ -n "${{ inputs.seeds }}" ]]; then
+            args+=(--seeds "${{ inputs.seeds }}")
+          fi
+          if [[ -n "${{ inputs.interactions }}" ]]; then
+            args+=(--interactions "${{ inputs.interactions }}")
+          fi
+          python scripts/run_experiment.py "${args[@]}"
+      - name: Validate and record machine
+        shell: bash
+        run: |
+          result="results/${{ inputs.profile }}/${{ inputs.run_name }}"
+          python scripts/validate_results.py "$result"
+          mkdir -p "$result/machine"
+          python --version > "$result/machine/python_version.txt"
+          python -m pip freeze > "$result/machine/pip_freeze.txt"
+          hostname > "$result/machine/hostname.txt"
+          lscpu > "$result/machine/cpu.txt"
+          git rev-parse HEAD > "$result/machine/commit.txt"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: ${{ inputs.run_name }}-${{ github.sha }}-${{ inputs.profile }}
-          path: results/${{ inputs.run_name }}
+          path: results/${{ inputs.profile }}/${{ inputs.run_name }}
+          if-no-files-found: error

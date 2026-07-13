@@ -1,6 +1,13 @@
 __pycache__/
 .pytest_cache/
 *.pyc
+*.egg-info/
+.venv/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.mplconfig/
 .env
 results/*
 !results/.gitkeep

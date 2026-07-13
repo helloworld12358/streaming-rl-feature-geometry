@@ -1,10 +1,10 @@
 {
   "profile": "full_stationary",
   "seeds": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
-  "conditions": ["observation_only", "oracle", "trace_only", "raw", "rms_raw", "standardized", "decorrelated", "whitened", "gaussian_moment", "unit_sphere"],
+  "conditions": ["raw", "rms_raw", "standardized", "whitened"],
   "total_interactions": 200000,
   "corridor_length": 5,
-  "horizons": [0.6, 0.9],
+  "horizons": [0.2, 0.4],
   "gvf_bank": "mixed",
   "trace_dim": 12,
   "gvf_alpha": 0.006,
@@ -15,8 +15,6 @@
   "transform_eps": 0.001,
   "transform_min_samples": 96,
   "cov_update_every": 100,
-  "moment_beta": 0.005,
-  "moment_learning_rate": 0.0005,
   "metrics_stride": 200,
   "analysis_burn_in": 5000,
   "reservoir_size": 8000,
@@ -25,5 +23,5 @@
   "accuracy_threshold": 0.8,
   "workers": 4,
   "nonstationary": false,
-  "output_dir": "results/full_stationary"
+  "output_dir": "results/full_short_horizon"
 }
