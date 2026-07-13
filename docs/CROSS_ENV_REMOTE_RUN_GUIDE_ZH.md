@@ -111,6 +111,17 @@ RL_RUN_CONTEXT=remote scripts/run_full_remote.sh --allow-full-run --config confi
 
 compact 仅比较 raw/matched；short horizon 仅比较 E1/E2 的 raw/matched，不是完整笛卡尔积。
 
+如果机器配额或排队系统要求按环境拆分，四份配置与主矩阵使用完全相同的环境内条件、seed 和预算，可分别运行：
+
+```bash
+RL_RUN_CONTEXT=remote scripts/run_full_remote.sh --allow-full-run --config configs/cross_full_tmaze.json --workers <WORKERS> --run-name cross-full-tmaze-<EXTENSION_COMMIT_SHA>
+RL_RUN_CONTEXT=remote scripts/run_full_remote.sh --allow-full-run --config configs/cross_full_ringworld.json --workers <WORKERS> --run-name cross-full-ringworld-<EXTENSION_COMMIT_SHA>
+RL_RUN_CONTEXT=remote scripts/run_full_remote.sh --allow-full-run --config configs/cross_full_two_loop.json --workers <WORKERS> --run-name cross-full-two-loop-<EXTENSION_COMMIT_SHA>
+RL_RUN_CONTEXT=remote scripts/run_full_remote.sh --allow-full-run --config configs/cross_full_hidden_velocity.json --workers <WORKERS> --run-name cross-full-hidden-velocity-<EXTENSION_COMMIT_SHA>
+```
+
+拆分配置生成彼此隔离的结果目录，不能与 `cross_full.json` 的输出混合后伪装成一次完整运行；应分别完成 manifest 检查和聚合，再在报告中明确其来源。
+
 ## 11. 运行 E1 non-stationary full
 
 stationary full 验证后，新建独立 tmux：

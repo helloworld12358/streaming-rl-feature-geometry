@@ -152,6 +152,10 @@ def test_repository_cross_configs_load_and_preserve_three_pilot_seeds():
     matched_horizon = load_cross_config("configs/cross_pilot_matched_horizon.json")
     remote_paths = [
         "configs/cross_full.json",
+        "configs/cross_full_tmaze.json",
+        "configs/cross_full_ringworld.json",
+        "configs/cross_full_two_loop.json",
+        "configs/cross_full_hidden_velocity.json",
         "configs/cross_full_compact.json",
         "configs/cross_full_short_horizon.json",
         "configs/cross_full_nonstationary.json",
@@ -179,6 +183,13 @@ def test_repository_cross_configs_load_and_preserve_three_pilot_seeds():
         for environment, spec in matched_horizon["environments"].items()
     }
     assert all(config["remote_full"] and len(config["seeds"]) == 20 for config in remote)
+    single_environment = remote[1:5]
+    assert [set(config["environments"]) for config in single_environment] == [
+        {"tmaze"},
+        {"ringworld"},
+        {"two_loop"},
+        {"hidden_velocity"},
+    ]
 
 
 def test_cross_nonstationary_change_is_e1_only_and_recorded(tmp_path):

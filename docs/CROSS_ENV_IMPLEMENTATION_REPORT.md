@@ -37,7 +37,7 @@ The figure set covers learning curves, final performance, matched versus generic
 - `cross_pilot.json`: E1-E4, seeds 0-2, core generic conditions plus matched, without a full Cartesian product.
 - `cross_pilot_compact.json` and `cross_pilot_bank_mixed.json`: same-budget compact/mixed comparison under raw and matched only.
 - `cross_pilot_short_horizon.json` and `cross_pilot_matched_horizon.json`: same-budget E1/E2 horizon comparison under raw and matched only.
-- `cross_full*.json`: 20-seed main, compact, short-horizon, and E1 non-stationary suites. They are remote-only.
+- `cross_full*.json`: 20-seed cross-environment main suite, four independently runnable E1-E4 environment configs, compact, short-horizon, and E1 non-stationary suites. They are remote-only.
 
 Both the Python runner and Linux launcher require `RL_RUN_CONTEXT=remote` and `--allow-full-run` for every full profile. The launcher keeps one CPU free, preserves logs before and after result-directory creation, and the aggregator checks every expected manifest before rebuilding figures and packaging.
 

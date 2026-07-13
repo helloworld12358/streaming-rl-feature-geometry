@@ -122,7 +122,7 @@ The 20-seed cross full suite is prepared but has not been run. On a real remote 
 RL_RUN_CONTEXT=remote scripts/run_full_remote.sh --allow-full-run --config configs/cross_full.json --workers 4 --run-name cross-full-<COMMIT_SHA>
 ```
 
-Selected `cross_full_compact.json`, `cross_full_short_horizon.json`, and `cross_full_nonstationary.json` suites remain separately guarded. Follow `docs/CROSS_ENV_REMOTE_RUN_GUIDE_ZH.md`.
+Four environment-specific `cross_full_<environment>.json` configs and the selected `cross_full_compact.json`, `cross_full_short_horizon.json`, and `cross_full_nonstationary.json` suites remain separately guarded. Follow `docs/CROSS_ENV_REMOTE_RUN_GUIDE_ZH.md`.
 
 ## 21. Cross-environment documents
 
