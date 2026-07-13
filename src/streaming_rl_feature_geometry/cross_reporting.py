@@ -282,6 +282,28 @@ def _environment_geometry(root: Path, figures: Path) -> None:
         _finish(fig, figures / "e4_hidden_velocity_prediction.png")
 
 
+def _nonstationary_adaptation(steps: pd.DataFrame, figures: Path) -> None:
+    """Render the preregistered E1 adaptation plot only from an executed change."""
+
+    if "post_change" not in steps or not (steps["post_change"] > 0).any():
+        return
+    subset = steps[steps.environment == "tmaze"]
+    grouped = _mean_sem(subset, ["condition", "t"], "moving_performance")
+    change_point = float(subset.loc[subset["post_change"] > 0, "t"].min())
+    fig, ax = plt.subplots(figsize=(10, 5.5))
+    for condition, values in grouped.groupby("condition", sort=False):
+        ax.plot(values["t"], values["mean"], label=condition, color=PALETTE.get(condition))
+    ax.axvline(change_point, linestyle="--", color="#333333", label="corridor change")
+    ax.set(
+        title="E1 adaptation after the remote-only corridor-length change",
+        xlabel="Interaction",
+        ylabel="Moving accuracy",
+    )
+    ax.grid(alpha=0.25)
+    ax.legend(ncol=3)
+    _finish(fig, figures / "remote_nonstationary_adaptation.png")
+
+
 def make_cross_figures(
     root: str | Path,
     summaries: pd.DataFrame,
@@ -313,3 +335,4 @@ def make_cross_figures(
     _eigen_spectra(representation, figures)
     _property_heatmap(representation, figures)
     _environment_geometry(root, figures)
+    _nonstationary_adaptation(steps, figures)

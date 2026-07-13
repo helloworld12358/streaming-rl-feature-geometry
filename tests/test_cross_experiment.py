@@ -146,9 +146,60 @@ def test_cross_full_guard_requires_both_safeguards(tmp_path, monkeypatch):
 def test_repository_cross_configs_load_and_preserve_three_pilot_seeds():
     smoke = load_cross_config("configs/cross_smoke.json")
     pilot = load_cross_config("configs/cross_pilot.json")
+    compact = load_cross_config("configs/cross_pilot_compact.json")
+    short = load_cross_config("configs/cross_pilot_short_horizon.json")
+    remote_paths = [
+        "configs/cross_full.json",
+        "configs/cross_full_compact.json",
+        "configs/cross_full_short_horizon.json",
+        "configs/cross_full_nonstationary.json",
+    ]
+    remote = [load_cross_config(path) for path in remote_paths]
     assert set(smoke["environments"]) == set(pilot["environments"])
     assert pilot["seeds"] == [0, 1, 2]
     assert all("matched" in spec["conditions"] for spec in pilot["environments"].values())
+    assert compact["seeds"] == short["seeds"] == [0, 1, 2]
+    assert all(spec["bank"] == "compact" for spec in compact["environments"].values())
+    assert set(short["environments"]) == {"tmaze", "ringworld"}
+    assert short["horizons"] == [0.2, 0.4]
+    assert all(config["remote_full"] and len(config["seeds"]) == 20 for config in remote)
+
+
+def test_cross_nonstationary_change_is_e1_only_and_recorded(tmp_path):
+    config = tiny_cross_config(tmp_path)
+    config["environments"] = {
+        "tmaze": {
+            "interactions": 80,
+            "conditions": ["raw"],
+            "bank": "compact",
+            "kwargs": {"corridor_length": 2},
+            "nonstationary": True,
+            "change_point": 40,
+            "corridor_length_after": 4,
+        }
+    }
+    config["analysis_burn_in"] = 4
+    config["final_window"] = 2
+    path = tmp_path / "nonstationary.json"
+    path.write_text(json.dumps(config), encoding="utf-8")
+    loaded = load_cross_config(path)
+    summary = run_cross_one((loaded, "tmaze", "raw", 0, str(tmp_path / "run")))
+    assert summary["change_point"] == 40
+    assert np.isfinite(summary["pre_change_accuracy"])
+    assert np.isfinite(summary["final_post_change_accuracy"])
+
+    config["environments"] = {
+        "ringworld": {
+            "interactions": 80,
+            "conditions": ["raw"],
+            "nonstationary": True,
+            "change_point": 40,
+            "corridor_length_after": 4,
+        }
+    }
+    path.write_text(json.dumps(config), encoding="utf-8")
+    with pytest.raises(ValueError, match="E1/T-maze only"):
+        load_cross_config(path)
 
 
 def test_non_oracle_controller_state_cannot_read_oracle_features():

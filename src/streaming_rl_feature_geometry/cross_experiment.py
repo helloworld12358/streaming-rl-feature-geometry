@@ -93,6 +93,16 @@ def load_cross_config(path: str | Path) -> dict[str, Any]:
             raise ValueError(f"unknown {env_id} conditions: {sorted(unknown_conditions)}")
         if spec.get("bank", "mixed") not in {"compact", "mixed"}:
             raise ValueError("bank must be compact or mixed")
+        if spec.get("nonstationary", False):
+            if env_id != "tmaze":
+                raise ValueError("the preregistered non-stationary change is E1/T-maze only")
+            for key in ("change_point", "corridor_length_after"):
+                if key not in spec:
+                    raise ValueError(f"non-stationary tmaze requires {key}")
+            if not 0 < int(spec["change_point"]) < int(spec["interactions"]):
+                raise ValueError("change_point must be inside the E1 run")
+            if int(spec["corridor_length_after"]) < 1:
+                raise ValueError("corridor_length_after must be positive")
     defaults = {
         "transform_eps": 1e-3,
         "transform_min_samples": 64,
@@ -228,6 +238,7 @@ def _execute_cross_run(
     recent_correct: deque[float] = deque(maxlen=config["moving_window"])
     all_rewards: list[float] = []
     all_correct: list[float] = []
+    correct_times: list[int] = []
     all_stabilized: list[float] = []
     control_deltas: list[float] = []
     control_updates: list[float] = []
@@ -235,9 +246,15 @@ def _execute_cross_run(
     predictive_mse: list[float] = []
     cumulative_reward = 0.0
     threshold_time = -1
+    actual_change_point: int | None = None
     target_threshold = float(env_spec.get("threshold", 0.8 if environment != "hidden_velocity" else -0.3))
 
     for interaction in range(int(env_spec["interactions"])):
+        if env_spec.get("nonstationary", False) and interaction == int(
+            env_spec["change_point"]
+        ):
+            env.set_corridor_length(int(env_spec["corridor_length_after"]))
+            actual_change_point = interaction
         current_oracle = env.oracle_features.copy()
         analysis_vector = _diagnostic_features(
             condition, observation, current_oracle, transformed
@@ -271,6 +288,7 @@ def _execute_cross_run(
         if info.correct is not None:
             value = float(info.correct)
             all_correct.append(value)
+            correct_times.append(interaction)
             recent_correct.append(value)
             decision_rows.append(
                 {
@@ -308,6 +326,9 @@ def _execute_cross_run(
                     "moving_reward": moving_reward,
                     "moving_performance": moving_performance,
                     "stabilized": float(info.stabilized) if info.stabilized is not None else np.nan,
+                    "post_change": float(
+                        actual_change_point is not None and interaction >= actual_change_point
+                    ),
                 }
             )
             prediction_row: dict[str, Any] = {
@@ -353,6 +374,27 @@ def _execute_cross_run(
     final_reward = float(np.mean(final_rewards))
     final_accuracy = float(np.mean(final_correct)) if final_correct else 0.0
     final_performance = final_reward if environment == "hidden_velocity" else final_accuracy
+    pre_change_accuracy = -1.0
+    final_post_change_accuracy = -1.0
+    recovery_time = -1
+    if env_spec.get("nonstationary", False):
+        if actual_change_point is None:
+            raise RuntimeError("configured non-stationary E1 change was not applied")
+        timed = np.asarray(correct_times, dtype=int)
+        correct = np.asarray(all_correct, dtype=float)
+        pre = correct[timed < actual_change_point]
+        post_mask = timed >= actual_change_point
+        post = correct[post_mask]
+        post_times = timed[post_mask]
+        window = int(config["final_window"])
+        pre_change_accuracy = float(np.mean(pre[-window:])) if len(pre) else 0.0
+        final_post_change_accuracy = float(np.mean(post[-window:])) if len(post) else 0.0
+        target = pre_change_accuracy * 0.95
+        for index in range(len(post)):
+            current = post[index : index + window]
+            if len(current) == window and float(np.mean(current)) >= target:
+                recovery_time = int(post_times[index] - actual_change_point)
+                break
     summary: dict[str, Any] = {
         "environment": environment,
         "condition": condition,
@@ -370,6 +412,10 @@ def _execute_cross_run(
         "final_window_reward": final_reward,
         "final_performance": final_performance,
         "time_to_threshold": threshold_time,
+        "change_point": actual_change_point if actual_change_point is not None else -1,
+        "pre_change_accuracy": pre_change_accuracy,
+        "final_post_change_accuracy": final_post_change_accuracy,
+        "recovery_time": recovery_time,
         "stabilization_rate": float(np.mean(all_stabilized)) if all_stabilized else 0.0,
         "final_window_stabilization": float(
             np.mean(all_stabilized[-config["final_window"] :])

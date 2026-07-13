@@ -82,6 +82,15 @@ class TMazeAdapter:
     def latent_state(self) -> np.ndarray:
         return self.oracle_features
 
+    @property
+    def corridor_length(self) -> int:
+        return self.inner.corridor_length
+
+    def set_corridor_length(self, corridor_length: int) -> None:
+        """Apply the single scheduled E1 change through the verified core guard."""
+
+        self.inner.set_corridor_length(corridor_length)
+
     def step(self, action: int) -> tuple[np.ndarray, float, CrossStepInfo]:
         next_obs, reward, _, info = self.inner.step(action)
         position = info.corridor_position

@@ -47,17 +47,36 @@ if (( WORKERS > SAFE_MAX )); then
   exit 2
 fi
 
-PROFILE="$(python -c 'import json,sys; print(json.load(open(sys.argv[1]))["profile"])' "$CONFIG")"
-LOG_DIR="results/$PROFILE/$RUN_NAME"
-mkdir -p "$LOG_DIR"
-LOG_FILE="$LOG_DIR/remote_launcher.log"
+readarray -t CONFIG_METADATA < <(python - "$CONFIG" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+config = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+print(config["output_dir"])
+print("cross" if "environments" in config else "core")
+PY
+)
+OUTPUT_DIR="${CONFIG_METADATA[0]}"
+RUNNER_KIND="${CONFIG_METADATA[1]}"
+LOG_DIR="$OUTPUT_DIR/$RUN_NAME"
+mkdir -p "$OUTPUT_DIR"
+LOG_FILE="$OUTPUT_DIR/${RUN_NAME}.remote_launcher.log"
 
 set +e
-python scripts/run_experiment.py \
+if [[ "$RUNNER_KIND" == "cross" ]]; then
+  RUNNER="scripts/run_cross_experiment.py"
+else
+  RUNNER="scripts/run_experiment.py"
+fi
+python "$RUNNER" \
   --config "$CONFIG" \
   --allow-full-run \
   --workers "$WORKERS" \
   --run-name "$RUN_NAME" 2>&1 | tee "$LOG_FILE"
 STATUS=${PIPESTATUS[0]}
 set -e
+if [[ -d "$LOG_DIR" ]]; then
+  cp "$LOG_FILE" "$LOG_DIR/remote_launcher.log"
+fi
 exit "$STATUS"

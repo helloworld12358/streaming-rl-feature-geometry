@@ -26,8 +26,16 @@ python scripts/validate_results.py \
   "results/smoke/$SMOKE_NAME" \
   --config configs/smoke.json
 
+CROSS_SMOKE_NAME="cross-remote-smoke-$(date -u +%Y%m%dT%H%M%SZ)"
+python scripts/run_cross_experiment.py \
+  --config configs/cross_smoke.json \
+  --workers 1 \
+  --run-name "$CROSS_SMOKE_NAME"
+
 echo "Bootstrap and smoke passed."
 echo "Stationary full command:"
 echo "RL_RUN_CONTEXT=remote scripts/run_full_remote.sh --allow-full-run --config configs/full_stationary.json --workers 4 --run-name full-stationary-<COMMIT_SHA>"
 echo "Non-stationary full command:"
 echo "RL_RUN_CONTEXT=remote scripts/run_full_remote.sh --allow-full-run --config configs/full_nonstationary.json --workers 4 --run-name full-nonstationary-<COMMIT_SHA>"
+echo "Cross-environment full command:"
+echo "RL_RUN_CONTEXT=remote scripts/run_full_remote.sh --allow-full-run --config configs/cross_full.json --workers 4 --run-name cross-full-<COMMIT_SHA>"
