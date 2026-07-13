@@ -1,5 +1,7 @@
 # Requirements reconciliation
 
+> Historical audit note: the gap list below records the pre-Stage-A state and is intentionally preserved. Stage A later closed these items; the cross-environment completion state is reconciled in `COMPLETE_TASK_RECONCILIATION.md` and `CROSS_ENV_EXTENSION_RECONCILIATION.md`. It must not be read as current repository status.
+
 Status captured on 2026-07-13 after receiving the complete project specification. The active branch is `codex/predictive-feature-properties`; the checkout is intentionally dirty because the audited fixes are in progress. This document preserves the pre-specification work and identifies the remaining gap without resetting, cleaning, recloning, or discarding files.
 
 ## Already satisfied

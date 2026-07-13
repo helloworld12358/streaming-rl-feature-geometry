@@ -10,7 +10,7 @@ Do prescribed statistical and geometric properties of a fixed predictive state i
 
 ## 3. Environment
 
-`ContinuingTMaze` is a continuing T-maze with cue, delayed echo, corridor, junction, and one-step outcome phases. The left/right cue is unavailable at the junction. After the outcome, the environment enters the next trial rather than remaining terminal. The non-stationary full profile changes corridor length once, from 5 to 9 at interaction 150,000.
+`ContinuingTMaze` is a continuing T-maze with cue, delayed echo, corridor, junction, and one-step outcome phases. The left/right cue is unavailable at the junction. After the outcome, the environment enters the next trial rather than remaining terminal. The cross-environment extension adds an aliased Ringworld, an identity-by-phase two-loop task, and bounded hidden-velocity control through one common continuing interface. The remote non-stationary profiles apply one E1 corridor-length change from 5 to 9 at interaction 150,000.
 
 ## 4. Streaming definition
 
@@ -29,6 +29,9 @@ The fixed mixed bank has ten semantic GVFs: observation/echo, junction, positive
 - `whitened`: causal covariance whitening toward second-order isotropy.
 - `gaussian_moment`: exploratory bounded skew/tail shaping after whitening; it does not guarantee a Gaussian distribution.
 - `unit_sphere`: optional causal unit-norm projection.
+- `sparse`: fixed top-k causal projection.
+- `bounded`: causal elementwise bounded projection.
+- `matched`: fixed predictive-semantic simplex, circular, block, or anisotropic prior selected by environment; it never receives latent labels.
 
 ## 7. Baselines
 
@@ -98,3 +101,33 @@ The local smoke and three-seed pilot are too small for final claims. Linear off-
 ## 18. Reproduction information
 
 Every manifest records the exact command, config hash, seed, Git branch/commit/dirty state, Python and dependency versions, host/OS, times, and exit status. Reproduce a reported result by checking out its commit, using its recorded config, and choosing a new run name. Full results must also record the remote machine and retain failed-seed manifests.
+
+## 19. Cross-environment extension
+
+The environment-aware runner is separate from the verified core runner:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_cross_diagnostics.py --run-name cross-diagnostics-unique
+.\.venv\Scripts\python.exe scripts\run_cross_experiment.py --config configs\cross_smoke.json --workers 4 --run-name cross-smoke-unique
+.\.venv\Scripts\python.exe scripts\run_cross_experiment.py --config configs\cross_pilot.json --workers 4 --run-name cross-pilot-unique
+```
+
+Local pilot evidence uses seeds 0-2 and a staged matrix. Same-budget compact/mixed and matched/short-horizon configs are separate so the project never runs a full local Cartesian product. The current local result is heterogeneous: E3 has positive conditioning/moment signals, E1 is null, E2 is uncertain, E4 often favors raw, and the E2 circular prior fails its real-stream phase-order property gate. See `docs/CROSS_ENV_RESULTS.md`; these are pilot observations, not final claims.
+
+## 20. Cross-environment remote full
+
+The 20-seed cross full suite is prepared but has not been run. On a real remote Linux machine only:
+
+```bash
+RL_RUN_CONTEXT=remote scripts/run_full_remote.sh --allow-full-run --config configs/cross_full.json --workers 4 --run-name cross-full-<COMMIT_SHA>
+```
+
+Selected `cross_full_compact.json`, `cross_full_short_horizon.json`, and `cross_full_nonstationary.json` suites remain separately guarded. Follow `docs/CROSS_ENV_REMOTE_RUN_GUIDE_ZH.md`.
+
+## 21. Cross-environment documents
+
+- `docs/CROSS_ENV_EXTENSION_SPEC.md`
+- `docs/CROSS_ENV_IMPLEMENTATION_REPORT.md`
+- `docs/CROSS_ENV_RESULTS.md`
+- `docs/proposal_cross_environment_en.md`
+- `docs/proposal_cross_environment_zh.md`

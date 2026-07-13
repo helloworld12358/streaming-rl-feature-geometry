@@ -23,3 +23,21 @@ Times are Asia/Shanghai on 2026-07-13 unless noted. No credentials are recorded.
 | 23:xx | Pushed `codex/predictive-feature-properties` to the existing origin successfully after the privacy-safe rewrite. GitHub CLI was unavailable, so no Draft PR was created automatically; GitHub supplied the manual new-PR page. | Stage A remote branch exists; do not claim a PR exists until the manual page is submitted. |
 
 Final test, Git review, push, and PR status are appended at completion.
+
+## Cross-environment extension execution
+
+| Time | Action and evidence | Decision |
+|---|---|---|
+| 23:xx | Audited the complete 1,657-line master goal, all repository files, ignored result manifests, Git state, remote refs, and PR metadata before controlled writes. Archived the attachment byte-for-byte at SHA-256 `8B23DB...C3FF4`. | Preserved the dirty extension specification and every historical result; no clone/reset/clean. |
+| 23:xx | Implemented and tested E1-E4 common environments, compact/mixed causal banks, sparse/bounded transforms, M1-M4 priors, held-out task probes, environment-aware runner, aggregation, validation, and figures. | Kept the verified core runner separate and oracle state outside all predictive controller paths. |
+| 23:xx | Ran cross diagnostics v1: all then-present checks passed. Later audit found the required phase-order check missing. | Retained v1 but did not present it as the superseding property gate. |
+| 23:43-23:50 | Earlier cross smoke engineering batches v1/v2 were retained. | Used a new formal smoke name after the full test gate. |
+| 23:54-00:02 | Main pilot completed 120/120 at clean commit `408dcf6`. | Did not inspect effects until the staged comparison runs were complete. |
+| 00:xx | Full suite initially found one validator regression: sparse/bounded optional metrics were treated as mandatory for observation-only. Added only those fields to the existing not-applicable rule. | Full suite then passed 72/72; no numerical guard was broadly relaxed. |
+| 00:05-00:06 | Formal cross smoke completed 20/20, top `ok`, 15 figures, clean commit `f18cc36`. | Oracle sanity passed E1-E4; proceeded to pilots. |
+| 00:xx | Compact and short-horizon batches completed. Before reading their effects, noticed their budgets lacked paired controls; froze same-budget mixed and matched-horizon configs in `55fb480` and ran both. | Avoided a training-budget confound without outcome-driven tuning. |
+| 00:xx | Main and paired pilot analysis showed E3 positive signals, E1 null, E2 uncertainty, E4 often favoring raw, and no universal matched-prior advantage. | Reported mean ± SEM and paired differences; retained negative/null findings. |
+| 00:xx | Added synthetic and real-stream circular phase-order checks. Formal diagnostics v2 passed 29/30 and exited nonzero because E2 real-stream alignment `0.2406` missed the fixed `0.3` threshold. | Preserved failed v2 and did not lower the threshold. |
+| 00:xx | Prepared guarded 20-seed main/compact/short/E1-nonstationary configs and extended Linux bootstrap/full/aggregate/package scripts. Local guard probes exited 2 without creating full results. | Remote full remains explicitly unrun. |
+
+Final extension QA, push, and Draft PR status follow in the final publication checkpoint.

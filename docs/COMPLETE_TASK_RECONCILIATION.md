@@ -1,18 +1,14 @@
 # Complete Task Reconciliation
 
-**Captured:** 2026-07-13 (Asia/Shanghai)
+**Goal archive:** `docs/COMPLETE_OVERNIGHT_MASTER_GOAL.md`
 
-**Repository:** `D:\download\GitHub\streaming-rl-feature-geometry`
+**Project:** `D:\download\GitHub\streaming-rl-feature-geometry`
 
-**Origin:** `https://github.com/helloworld12358/streaming-rl-feature-geometry.git`
+**Execution branch:** `codex/cross-environment-representation-priors`
 
-**Normative goal:** `docs/COMPLETE_OVERNIGHT_MASTER_GOAL.md`
+This document reconciles the full attached goal with the actual repository, ignored evidence directories, Git history, local executions, and remote status. No prior valid change or failed/null result was deleted, overwritten, or relabeled.
 
-**Normative goal SHA-256:** `8B23DB2815F7E7A95DC37E6AAF70D1A931A5CC00AA9338AE08C6E6ECDF3C3FF4`
-
-This reconciliation records the actual repository state after a read-only audit of the complete attached goal, all maintained code, tests, configs, scripts, workflows, documents, ignored result batches, Git history, remote refs, and public pull-request metadata. It does not discard or relabel prior work or failed evidence.
-
-## Goal-file copy verification
+## Exact goal archive
 
 | Field | Value |
 |---|---|
@@ -24,159 +20,115 @@ This reconciliation records the actual repository state after a read-only audit 
 | First heading | `# 今晚统一总目标：Streaming RL Predictive Representation Properties` |
 | Last heading | `# 32. 立即执行方式` |
 
-The source and destination hashes were compared after a byte-for-byte copy and are identical.
+The copy was byte-for-byte verified against the source. It remains the normative completion specification.
 
-## Git state at the start of this goal
+## Starting audit and preservation
 
-- Starting branch: `codex/cross-environment-representation-priors`.
-- Starting HEAD: `f880b4977278016c25f3180b10a2206115be99f2` (`Record core branch publication`).
-- Starting uncommitted file: `docs/CROSS_ENV_EXTENSION_SPEC.md`, untracked and preserved.
-- Core branch: `codex/predictive-feature-properties` at `f880b4977278016c25f3180b10a2206115be99f2`.
-- Remote core ref: `origin/codex/predictive-feature-properties` at the same SHA.
-- Remote `main`: `ab4f9a1998efb2736611e50be1c2e31b94d7e8f0`.
-- The required origin URL is unchanged.
-- No clone, `git reset --hard`, `git clean -fd`, force push, history deletion, or user-file deletion was performed.
+- Starting HEAD: `f880b4977278016c25f3180b10a2206115be99f2` on the requested extension branch.
+- Starting uncommitted file: `docs/CROSS_ENV_EXTENSION_SPEC.md`, preserved and committed.
+- Core branch `codex/predictive-feature-properties` was already pushed at the same base.
+- The existing public PR #1 was an older non-draft `codex/githubrl` PR; no extension PR existed.
+- All maintained source, tests, configs, scripts, workflows, documentation, Git status/history/remotes, and ignored result batches were audited before controlled writes.
+- No clone, `git reset --hard`, `git clean -fd`, force push, history rewrite, credential write, result deletion, or destructive cleanup was performed.
 
-During the audit, already-active extension work advanced the same branch through three clean checkpoints. Those changes were inspected and preserved rather than overwritten:
+## Stage A reconciliation
 
-1. `19aaff8e268e2daac5d0358bf4d52b62bd87b8e1` — extension specification, reconciliation, hypotheses, and experiment matrix;
-2. `d9097f5` — common environment protocol plus E2 Ringworld, E3 two-loop, E4 hidden velocity, and tests;
-3. `56ee135` — common causal predictive bank, task-matched priors, sparse/bounded transforms, and tests.
+Stage A was complete and checkpointed before Stage B. It provides the continuing T-maze, isolated observation/trace/oracle baselines, fixed causal trace plus semantic linear GVFs, linear SARSA(lambda), raw/RMS/standardized/decorrelated/whitened/exploratory-moment/unit-sphere representations, held-out probes, manifests, validation, figures, and dual remote guard.
 
-The exact full SHA values of later checkpoints will be recorded after the final Git gate.
+Historical evidence is preserved:
 
-## Public branch and PR state
+- Core diagnostics v1 and v2: 11/12, failed and retained; v3: 12/12 passing.
+- Core smoke v1: historical top failure retained; v2 and final smoke: 4/4 passing.
+- Core main pilot v3: 30/30, seeds 0-2 × 10 conditions × 20,000 interactions.
+- Core pilot result: oracle `0.985 ± 0.006`; non-oracle conditions approximately 0.52-0.57. Whitening improved second-order geometry without clear control benefit.
+- Remote core full stationary/non-stationary experiments were not run.
 
-- The core branch is pushed.
-- The extension branch was not present in `git ls-remote --heads origin` at the initial audit and therefore had not yet been pushed.
-- GitHub's public API reported one open, non-draft PR: PR #1, head `codex/githubrl`, base `main`, URL `https://github.com/helloworld12358/streaming-rl-feature-geometry/pull/1`.
-- There was no Draft PR for the core or extension branch at the audit point.
-- GitHub CLI is not installed. This is not treated as success; browser/API alternatives will be attempted after the final pushed checkpoint.
+Sparse and bounded were named as shared properties but were not in the historical core checkpoint. They were added causally and tested on the extension branch rather than rewriting Stage A history.
 
-## Stage A: actual implementation status
+## Stage B implementation
 
-The stage-A T-maze implementation is present and its core checkpoint was created before the extension branch:
+Completed components:
 
-- continuing cue → corridor → junction → outcome → next-trial state machine;
-- no training reset at trial boundaries;
-- identical junction observations for both cues;
-- delayed cue echo only after the junction action;
-- isolated observation-only, trace-only, predictive, and oracle controller paths;
-- fixed causal trace plus ten semantic linear TD(0) GVFs;
-- linear accumulating-trace semi-gradient SARSA(lambda);
-- raw, RMS raw, standardization, decorrelation, whitening/second-order isotropy, exploratory Gaussian-moment shaping, and unit sphere;
-- deterministic held-out, trial-grouped diagnostic probes that do not update the agent;
-- unique run directories, manifests, configs, CSVs, logs, validation, aggregation, and real Matplotlib figures;
-- dual remote-full guard requiring both `RL_RUN_CONTEXT=remote` and `--allow-full-run`;
-- Linux remote bootstrap/full/aggregation scripts and Chinese remote guide.
+1. Common continuing environment protocol/registry with diagnostic-only latent state.
+2. E1 adapter, E2 aliased Ringworld, E3 aliased two-loop, and E4 bounded hidden velocity; optional E5 deferred.
+3. Compact/mixed fixed-trace linear TD predictive banks with exactly-once update guards.
+4. R0-R8 generic representations, including sparse and bounded.
+5. M1-M4 simplex/circular/block/anisotropic fixed-semantic priors with no latent-label argument.
+6. Linear controller integration with explicit non-oracle boundary tests.
+7. Deterministic grouped held-out phase/identity/joint-state/velocity probes that never update the agent.
+8. Unified online control/prediction/stability/representation metrics and environment-specific metrics.
+9. Isolated environment/condition/seed configs, manifests, logs, CSVs, weights, definitions, diagnostic samples, validation, aggregation, and Matplotlib figures.
+10. Synthetic and real-stream machine-readable property diagnostics.
+11. Cross smoke, three-seed main pilot, and paired same-budget bank/horizon ablations.
+12. 20-seed main/compact/short/non-stationary remote configs, reusable guarded scripts, packaging, and Chinese instructions.
 
-The master goal describes sparse and bounded transforms as properties shared by stages A and B. They were missing from the historical core checkpoint, but are now implemented and tested in extension checkpoint `56ee135`; this historical ordering discrepancy is preserved and documented rather than hidden by rewriting the core history.
+The original core runner and commands remain available; Stage B uses `run_cross_experiment.py` alongside them.
 
-## Stage A: tests and evidence
+## Local validation and result status
 
-- Historical final core suite: 32 passed in 44.62 s.
-- Current audit suite after the first E2–E4 additions: 42 passed in 24.39 s.
-- Synthetic property diagnostics:
-  - `results/diagnostics/preregistered-20260713`: 11/12, retained failed;
-  - `results/diagnostics/preregistered-20260713-v2`: 11/12, retained failed;
-  - `results/diagnostics/preregistered-20260713-v3`: 12/12, formal passing evidence.
-- Smoke evidence:
-  - `compliant-smoke-20260713-v1`: top manifest remains failed, although the corrected current validator can read all four child runs;
-  - `compliant-smoke-20260713-v2`: 4/4, top manifest `ok`;
-  - `final-core-smoke-b559734`: 4/4, top manifest `ok`;
-  - `local-smoke-20260713`: older pre-final engineering evidence with a legacy manifest.
-- Pilot evidence:
-  - `local-pilot-20260713`: older 21-run engineering pilot;
-  - `preregistered-pilot-20260713-v1`: 30 child runs but top manifest `failed`; retained as failed evidence;
-  - `preregistered-pilot-20260713-v2`: actual on-disk manifest now says `ok` with 30/30 child runs;
-  - `preregistered-pilot-20260713-v3`: formal 30/30, 3 seeds × 10 conditions × 20,000 interactions, top manifest `ok`.
+### Tests and guards
 
-The current validator successfully checks all three preregistered pilot directories, but this does not change v1's historical failed top manifest. Result directories remain ignored and are not mixed or overwritten.
+- Final pre-document full suite: 72 passed in 31.37 seconds.
+- Cross-runner/config/environment/guard targeted gate: 30 passed.
+- Git-Bash syntax check: `bootstrap_remote.sh`, `run_full_remote.sh`, and `aggregate_remote.sh` passed.
+- Local `run_full_remote.sh` and `aggregate_remote.sh` probes both refused with exit code 2; no full output directory was created.
 
-## Stage A pilot finding
+### Cross diagnostics
 
-The formal v3 pilot supports only a limited observation: oracle control learned (`0.985 ± 0.006` final-window accuracy), while non-oracle conditions overlapped at roughly 0.52–0.57. Whitening improved second-order isotropy/effective rank without a clear control improvement. Trace-only cue decodability did not guarantee that the online controller used the information. These are preserved negative/null pilot findings, not final conclusions.
+- v1: 24/24 checks then present, top `ok`, but lacked the required phase-order check and is not the final diagnostic.
+- v2: 29/30, top `failed`, retained. E2 unit-circle radius passes, but real-stream phase alignment `0.2406` is below the fixed `0.3` threshold (shuffled `0.0098`). No threshold was lowered.
 
-## Known stage-A documentation or evidence issues
+### Cross smoke and pilots
 
-1. `docs/work_log.md` says pilot v2 remained incomplete, but the current on-disk v2 top manifest is `ok`, has an end time, and has 30/30 successful child manifests. The final report must distinguish the command interruption from the eventual batch completion.
-2. Older failed batches pass parts of the corrected current validator. Their original failed top manifests must not be rewritten as successful.
-3. The core branch has no Draft PR. The earlier work log accurately reported the absence of `gh`, but the final goal still requires another safe Draft-PR attempt after push.
-4. Remote full stationary and non-stationary experiments have not been run and must remain explicitly unrun locally.
-5. Three-seed results are pilot evidence only.
+- Smoke: 20/20, top `ok`, 15 real figures, clean commit `f18cc36`.
+- Main pilot: 120/120, top `ok`, clean commit `408dcf6`.
+- Compact/mixed paired bank batches: 24/24 and 24/24, both `ok`.
+- Short/matched paired horizon batches: 12/12 and 12/12, both `ok`.
 
-## Stage B: implemented at this reconciliation point
+Main pilot finding: E3 shows positive local signals for standardization, whitening, exploratory moment shaping, and block matched prior; E1 is null; E2 is uncertain; E4 often favors raw. Matched geometry is not universally beneficial. Details and mean ± SEM tables are in `CROSS_ENV_RESULTS.md`.
 
-- Normative extension specification and preregistered hypotheses/matrix.
-- A common `StreamingEnvironment` protocol and registry with diagnostic-only latent/oracle fields.
-- E1 adapter preserving the verified T-maze implementation.
-- E2 aliased continuing Ringworld.
-- E3 continuing aliased two-loop identity × phase task.
-- E4 bounded hidden-velocity continuing control.
-- A common compact/mixed causal fixed-trace linear predictive bank.
-- R7 fixed top-k sparse and R8 causal bounded transforms.
-- M1 simplex, M2 circular, M3 block simplex × circle, and M4 prescribed anisotropic transforms with no latent-label transform argument.
-- Reproducibility, continuing, finiteness, aliasing, one-pass predictive-update, property, and no-latent-argument tests.
-- E5 remains correctly deferred.
+These are three-seed pilot observations. They were documented after frozen execution without reward-driven retuning.
 
-## Stage B: missing or not yet verified
+## Remote package and status
 
-1. Environment-aware runner/controller integration that preserves the stage-A commands.
-2. End-to-end proof that predictive/matched conditions receive no latent/oracle input.
-3. Oracle-learnability and observation-only partial-observability sanity checks for E2–E4.
-4. Unified and environment-specific held-out metrics for phase, identity, joint state, velocity, cost, stabilization, and neighborhood structure.
-5. Cross-environment result validation, isolation, aggregation, and real figure generation.
-6. Machine-readable synthetic and real-stream property-fulfillment diagnostics for R7/R8 and M1–M4.
-7. Cross-environment smoke for E1–E4.
-8. Fixed three-seed staged local pilot for E1–E4 within the local runtime limit.
-9. Cross-environment implementation/results reports, English/Chinese proposals, paper/poster outlines, and remote Chinese guide.
-10. Cross-environment full configs/scripts with the existing two-factor guard.
-11. Final full tests, diff/secret/result-size checks, commits, push, and Draft PR.
+Prepared configs:
 
-## Implementations to preserve
+- `configs/cross_full.json`
+- `configs/cross_full_compact.json`
+- `configs/cross_full_short_horizon.json`
+- `configs/cross_full_nonstationary.json`
 
-- All stage-A causal update ordering and baseline isolation.
-- Existing public core history and the core commit-to-pilot mapping.
-- Every failed, incomplete, null, and successful local result directory.
-- The exact master-goal copy and existing extension specification.
-- Backward-compatible stage-A configs, scripts, and result schema unless a tested compatibility layer requires a minimal extension.
-- Current common environment, predictive-bank, and matched-prior work subject to scientific tests.
+Exact main command on a real remote Linux machine:
 
-## Implementations to modify or extend
+```bash
+RL_RUN_CONTEXT=remote scripts/run_full_remote.sh --allow-full-run --config configs/cross_full.json --workers 4 --run-name cross-full-<COMMIT_SHA>
+```
 
-- Generalize orchestration through a separate environment-aware layer instead of destabilizing the verified T-maze path.
-- Add exact semantic-index metadata rather than relying on unexplained positional assumptions for matched blocks.
-- Add end-to-end causal/no-latent tests at the controller input boundary.
-- Add environment-specific diagnostic probes with deterministic train/test grouping.
-- Add staged configs, aggregation, figures, diagnostics, and guarded remote packaging.
-- Reconcile work-log and final-report statements with actual manifests without editing historical manifests.
+The shell launcher and Python runner both require the environment variable and flag. Full runs have **not** been executed locally or remotely during this goal. The E1 adaptation hypothesis therefore remains unverified. See `docs/CROSS_ENV_REMOTE_RUN_GUIDE_ZH.md`.
 
-## Scientific risks
+## Documentation map
 
-- Oracle success does not prove the predictive bank can recover the required state.
-- A current observation or event definition can accidentally leak decision identity.
-- A matched prior can encode semantics incorrectly even without accepting latent labels.
-- Better rank, isotropy, moments, sparsity, or circular/simplex checks may not improve control.
-- Feature scale and a shared controller step size can confound comparisons.
-- Short local pilots and three seeds do not support final inference.
-- E4 reward scale is not directly comparable with categorical-task accuracy and must be faceted or normalized transparently.
+- Normative goal/spec: `COMPLETE_OVERNIGHT_MASTER_GOAL.md`, `CROSS_ENV_EXTENSION_SPEC.md`.
+- Frozen hypotheses/matrix: `CROSS_ENV_HYPOTHESES.md`, `CROSS_ENV_EXPERIMENT_MATRIX.md`.
+- Implementation/results: `CROSS_ENV_IMPLEMENTATION_REPORT.md`, `CROSS_ENV_RESULTS.md`.
+- Proposals: `proposal_cross_environment_en.md`, `proposal_cross_environment_zh.md`.
+- Remote instructions: `CROSS_ENV_REMOTE_RUN_GUIDE_ZH.md`.
+- Manuscript planning: `cross_environment_paper_outline.md`, `cross_environment_poster_outline.md`.
 
-## Engineering risks
+README, research specification, the core implementation report, extension reconciliation, proposals, configs, executable commands, and remote status are synchronized.
 
-- Concurrent changes in the same checkout can absorb unrelated files into a checkpoint; status and diff must be checked before every commit.
-- Circular imports between environment modules and the common metadata type need explicit import tests.
-- Fixed semantic indices can silently mismatch a bank when event ordering, continuation ordering, or bank type changes.
-- Result aggregation must not pool incompatible environments or stale directories.
-- Local runtime must be reduced through interactions before seeds or required environments are removed.
+## Git checkpoints completed before the final publication gate
 
-## Required serial execution from here
+- `19aaff8`: preregister extension specification.
+- `d9097f5`: common E1-E4 environment family.
+- `56ee135`: predictive banks and matched priors.
+- `68c9ff2`: exact master-goal archive and initial reconciliation.
+- `22c63ff`: cross-environment runner.
+- `c65561b`, `1429b49`: empty-table, oracle-isolation, and causal analysis fixes.
+- `f40284c`, `408dcf6`: diagnostics and frozen pilot hypotheses.
+- `fbb3e3e`: staged remote package and E1 non-stationarity.
+- `f18cc36`: sparse/bounded validation fix.
+- `55fb480`: same-budget bank/horizon pairing.
+- `ca9e884`: circular phase-order audit.
 
-1. Commit the exact master-goal copy and this reconciliation without absorbing unrelated work.
-2. Finish and test the common runner/controller path and causal isolation.
-3. Verify each E1–E4 environment with oracle and observation-only sanity runs.
-4. Finish metrics, property diagnostics, isolation, aggregation, and real figures.
-5. Run the cross-environment smoke only after the tests pass.
-6. Freeze configs/hypotheses, then run the three-seed local pilot without outcome-driven tuning.
-7. Complete proposals, reports, outlines, and the guarded remote package.
-8. Run final tests and validations, inspect diffs/secrets/result sizes, commit, push, and attempt a Draft PR.
-9. Keep remote full explicitly unrun on this local machine.
+Final QA, documentation commit(s), push, and Draft PR are reported at handoff only after each action actually succeeds.

@@ -78,3 +78,11 @@ Both full profiles require `RL_RUN_CONTEXT=remote` **and** `--allow-full-run`; e
 ## Decision rules and interpretation
 
 First assess whether each transform fulfills its named property on synthetic data and on observed representations. Then report control utility separately. P5 is labeled failed/exploratory if it does not reduce the targeted synthetic moment errors without destroying a bimodal separation diagnostic. The final pilot is a minimal reproducible observation, not a final conclusion. No method or hyperparameter will be selected using the final pilot reward.
+
+## Cross-environment registered extension
+
+The serial extension is specified in `CROSS_ENV_EXTENSION_SPEC.md` and its frozen hypotheses/matrix. It adds E2 Ringworld, E3 identity × phase two-loop, and E4 hidden velocity while adapting E1 through the existing implementation. The scientific variable remains the representation property; predictive questions, controller class, causal order, and analysis isolation stay fixed within each staged comparison.
+
+Additional registered representations are fixed top-k sparse, causal bounded, and the fixed-semantic M1-M4 simplex/circular/block/anisotropic priors. Whitening remains a second-order transform and `gaussian_moment` remains exploratory. The local matrix uses seeds 0-2, E1-E4, core generic representations, and matched priors. Compact/mixed and matched/short horizons are paired only under raw/matched at identical budgets. Remote full configs use 20 seeds and require both independent safeguards.
+
+The local pilot has now been observed and is reported in `CROSS_ENV_RESULTS.md`; it must not be used to retune the frozen profiles. The superseding property diagnostic records one failed condition: E2's circular output has unit radius but does not meet the real-stream phase-order threshold. Remote full and non-stationary adaptation remain planned and unverified.

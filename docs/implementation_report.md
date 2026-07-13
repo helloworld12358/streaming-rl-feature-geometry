@@ -50,3 +50,9 @@ Failed pilot batches are preserved: v1 completed all child runs but an over-broa
 ## Remote readiness
 
 `configs/full_stationary.json` and `configs/full_nonstationary.json` define 20-seed CPU studies at 200k and 300k interactions. Both environment variable `RL_RUN_CONTEXT=remote` and flag `--allow-full-run` are mandatory. Remote scripts validate Python, create `.venv`, run tests/smoke, enforce a CPU safety margin, preserve failed-seed manifests, verify completeness, regenerate aggregates/figures, and package artifacts. The exact user procedure is in `docs/REMOTE_RUN_GUIDE_ZH.md`.
+
+## Cross-environment extension handoff
+
+The later extension preserves this core path and adds a separate environment-aware runner for E1-E4, compact/mixed causal predictive banks, sparse/bounded transforms, fixed-semantic simplex/circular/block/anisotropic priors, held-out task-specific probes, cross aggregation/figures, staged local profiles, and guarded 20-seed remote profiles. The current combined suite passes 72 tests. Implementation details and actual three-seed results are in `CROSS_ENV_IMPLEMENTATION_REPORT.md` and `CROSS_ENV_RESULTS.md`.
+
+The extension does not turn the core pilot into a positive result. Its own results are also mixed: E3 shows positive signals, E1 is null, E2 is uncertain, E4 often favors raw, and E2 real-stream circular phase order fails its property gate. Cross-environment remote full experiments remain unrun.
