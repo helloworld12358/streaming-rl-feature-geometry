@@ -563,9 +563,8 @@ def validate_results(
         "transform_matrix_change_mean",
         "transform_matrix_change_max",
         "transform_refreshes",
-        "active_fraction",
-        "bounded_max_abs",
     }
+    extension_transform_metrics = {"active_fraction", "bounded_max_abs"}
     gaussian_transform_metrics = {
         "gaussian_parameter_change_mean",
         "gaussian_parameter_change_max",
@@ -574,7 +573,9 @@ def validate_results(
         "gaussian_ew_skewness_error",
         "gaussian_ew_kurtosis_error",
     }
-    optional_transform_metrics = base_transform_metrics | gaussian_transform_metrics
+    optional_transform_metrics = (
+        base_transform_metrics | gaussian_transform_metrics | extension_transform_metrics
+    )
     required_summary_metrics = [
         column
         for column in summaries.select_dtypes(include=[np.number]).columns
@@ -587,6 +588,11 @@ def validate_results(
         transformed[sorted(base_transform_metrics)].to_numpy()
     ).all():
         raise AssertionError("non-finite transform metrics for transformed condition")
+    available_extension_metrics = sorted(extension_transform_metrics & set(summaries))
+    if available_extension_metrics and not transformed.empty and not np.isfinite(
+        transformed[available_extension_metrics].to_numpy()
+    ).all():
+        raise AssertionError("non-finite extension transform metrics")
     gaussian = summaries[summaries["condition"] == "gaussian_moment"]
     if not gaussian.empty and not np.isfinite(
         gaussian[sorted(gaussian_transform_metrics)].to_numpy()

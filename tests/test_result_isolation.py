@@ -72,3 +72,8 @@ def test_validation_allows_not_applicable_transform_metrics_for_baseline(tmp_pat
     assert pd.isna(baseline["transform_condition_number"])
     assert pd.isna(raw["gaussian_parameter_change_mean"])
     assert validate_results(root, config)["runs"] == 3
+
+    summaries.drop(columns=["active_fraction", "bounded_max_abs"]).to_csv(
+        root / "aggregate_summary.csv", index=False
+    )
+    assert validate_results(root, config)["runs"] == 3
