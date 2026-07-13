@@ -47,6 +47,8 @@ class FeatureTransform:
         "whitened",
         "gaussian_moment",
         "unit_sphere",
+        "sparse",
+        "bounded",
     }
 
     def __init__(
@@ -60,6 +62,8 @@ class FeatureTransform:
         moment_learning_rate: float = 0.0005,
         gaussian_skew_bound: float = 0.75,
         gaussian_tail_bounds: tuple[float, float] = (0.6, 2.0),
+        sparse_top_k: int | None = None,
+        bounded_alpha: float = 1.0,
     ) -> None:
         kind = self.aliases.get(kind, kind)
         if kind not in self.predictive_kinds:
@@ -70,6 +74,10 @@ class FeatureTransform:
             raise ValueError("invalid Gaussian-moment hyperparameters")
         if gaussian_skew_bound <= 0 or not 0 < gaussian_tail_bounds[0] <= gaussian_tail_bounds[1]:
             raise ValueError("invalid Gaussian-moment parameter bounds")
+        if sparse_top_k is not None and not 1 <= sparse_top_k <= d:
+            raise ValueError("sparse_top_k must lie between one and feature dimension")
+        if bounded_alpha <= 0:
+            raise ValueError("bounded_alpha must be positive")
 
         self.kind = kind
         self.stats = OnlineMoments(d)
@@ -88,6 +96,7 @@ class FeatureTransform:
         self.last_scale_factor = 1.0
         self.last_raw_rms = 0.0
         self.last_output_rms = 0.0
+        self.last_output_max_abs = 0.0
 
         self.moment_beta = float(moment_beta)
         self.moment_learning_rate = float(moment_learning_rate)
@@ -100,6 +109,9 @@ class FeatureTransform:
         self.gaussian_parameter_change_sum = 0.0
         self.gaussian_parameter_change_max = 0.0
         self.gaussian_output_stats = OnlineMoments(d)
+        self.sparse_top_k = int(sparse_top_k or max(1, d // 3))
+        self.bounded_alpha = float(bounded_alpha)
+        self.last_active_fraction = 0.0
 
     def _record_matrix(self, matrix: np.ndarray) -> None:
         change = float(np.linalg.norm(matrix - self.W, ord="fro"))
@@ -207,6 +219,17 @@ class FeatureTransform:
             )
         elif self.kind == "unit_sphere":
             output = features / (np.linalg.norm(features) + self.eps)
+        elif self.kind == "sparse":
+            output = np.zeros_like(features)
+            indices = np.argpartition(np.abs(features), -self.sparse_top_k)[-self.sparse_top_k :]
+            output[indices] = features[indices]
+        elif self.kind == "bounded":
+            standardized = (
+                features.copy()
+                if self.stats.n < 2
+                else (features - self.stats.mean) / np.sqrt(self.stats.var() + self.eps)
+            )
+            output = np.tanh(self.bounded_alpha * standardized)
         else:
             output = self._matrix_transform(features)
             if self.kind == "gaussian_moment" and self.stats.n >= self.min_samples:
@@ -223,6 +246,8 @@ class FeatureTransform:
         self.output_mean_square += (output_rms**2 - self.output_mean_square) / new_count
         self.last_raw_rms = raw_rms
         self.last_output_rms = output_rms
+        self.last_output_max_abs = float(np.max(np.abs(output), initial=0.0))
+        self.last_active_fraction = float(np.mean(np.abs(output) > 1e-10))
         self.stats.update(features)
         return output
 
@@ -239,6 +264,8 @@ class FeatureTransform:
             ),
             "transform_matrix_change_max": self.matrix_change_max,
             "transform_refreshes": float(self.matrix_refreshes),
+            "active_fraction": self.last_active_fraction,
+            "bounded_max_abs": self.last_output_max_abs,
         }
         if self.kind == "gaussian_moment":
             first, second, third, fourth = self.gaussian_raw_moments
