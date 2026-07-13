@@ -34,7 +34,7 @@ Primary metrics are final-window junction accuracy, cumulative reward, time to 0
 
 ## Minimal local pilot result
 
-The preregistered local pilot used seeds 0–2, 20,000 interactions per condition, commit `e5f31cc7bbed5faf1a64d393708a0b5790a41a2a`, and `results/pilot/preregistered-pilot-20260713-v3`. All 30 runs completed with zero recorded NaN, Inf, or divergence events.
+The preregistered local pilot used seeds 0–2, 20,000 interactions per condition, and `results/pilot/preregistered-pilot-20260713-v3`. The manifest records clean pre-publication SHA `e5f31cc`; its tree-equivalent GitHub no-reply rewrite is `7687451`. All 30 runs completed with zero recorded NaN, Inf, or divergence events.
 
 | Condition | Final accuracy (mean ± SEM) | Cumulative reward (mean ± SEM) |
 |---|---:|---:|

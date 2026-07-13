@@ -36,7 +36,7 @@ T-maze 每轮开头短暂给出左/右 cue，随后只有一次 delayed echo。�
 
 ## 8. Pilot 的准确含义
 
-正式本地 pilot 是 seeds 0、1、2，每条件 20,000 interactions，共 30 个独立 run；路径为 `results/pilot/preregistered-pilot-20260713-v3`，运行代码提交为 `e5f31cc7bbed5faf1a64d393708a0b5790a41a2a`。oracle 达到 `0.985 ± 0.006`，证明任务和控制器上界有效。其余条件末窗均约为 0.52–0.57，误差范围重叠，没有证据支持任何预测变换优于 observation-only。
+正式本地 pilot 是 seeds 0、1、2，每条件 20,000 interactions，共 30 个独立 run；路径为 `results/pilot/preregistered-pilot-20260713-v3`。manifest 记录干净的发布前 SHA `e5f31cc`；因 GitHub 邮箱隐私保护仅重写提交元数据后，对应的相同代码 tree 为 `7687451`。oracle 达到 `0.985 ± 0.006`，证明任务和控制器上界有效。其余条件末窗均约为 0.52–0.57，误差范围重叠，没有证据支持任何预测变换优于 observation-only。
 
 最重要的局部观察是：raw 的 isotropy error 为 `6.01 ± 0.05`，whitened 降到 `2.98 ± 0.07`；effective rank 从 `2.59 ± 0.02` 升到 `5.88 ± 0.08`，但控制并未清晰改善。这不是“白化失败”，而是“完成二阶性质不等于完成 RL 目标”的反例候选。与此同时，多数预测表示在 junction 的 held-out cue decoding 高于 0.5，说明表示包含可线性访问的信息，但 SARSA 在此短预算内没有稳定利用它。
 

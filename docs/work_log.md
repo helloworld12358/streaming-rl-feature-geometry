@@ -19,5 +19,6 @@ Times are Asia/Shanghai on 2026-07-13 unless noted. No credentials are recorded.
 | 23:01–23:05 | Pilot v3 completed 30/30, 19 figures, no duplicate rows, NaN, Inf, or divergence; manifest commit `e5f31cc`, dirty false. | Use only v3 as formal pilot evidence. |
 | 23:xx | Independently recomputed seed means/SEM, inspected saved figures, and separated property/control findings. | Three-seed observations are caveated; no post-pilot tuning. |
 | 23:xx | Final full suite: 32 passed in 44.62 s; all Bash/PowerShell launcher syntax checks passed; pilot validator confirmed 30/30 expected runs. | Stage A evidence and launch package passed the pre-commit gate. |
+| 23:xx | First push was rejected with GH007 because commit metadata would expose a protected private email. Rewrote only the three unpublished feature commits with the GitHub no-reply address; code trees were unchanged. | Preserved the pilot manifest SHA-to-published-tree mapping; did not alter global Git config or use force push. |
 
 Final test, Git review, push, and PR status are appended at completion.
