@@ -60,8 +60,11 @@ def _faceted_learning_curves(steps: pd.DataFrame, figures: Path) -> None:
         ax.set_ylabel("Moving accuracy" if environment != "hidden_velocity" else "Moving reward")
         ax.grid(alpha=0.25)
     handles, labels = axes[0, 0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper center", ncol=min(6, max(1, len(labels))))
-    fig.suptitle("Cross-environment control learning curves (mean ± SEM)", y=1.02)
+    fig.legend(
+        handles, labels, loc="lower center", bbox_to_anchor=(0.5, -0.02),
+        ncol=min(6, max(1, len(labels))),
+    )
+    fig.suptitle("Cross-environment control learning curves (mean ± SEM)", y=1.0)
     _finish(fig, figures / "control_learning_curves_by_environment.png")
 
 
@@ -108,7 +111,10 @@ def _scatter_by_metric(joined: pd.DataFrame, metric: str, path: Path, xlabel: st
         ax.set_ylabel("Final performance")
         ax.grid(alpha=0.25)
     handles, labels = axes[0, 0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper center", ncol=min(6, max(1, len(labels))))
+    fig.legend(
+        handles, labels, loc="lower center", bbox_to_anchor=(0.5, -0.02),
+        ncol=min(6, max(1, len(labels))),
+    )
     _finish(fig, path)
 
 
@@ -128,8 +134,11 @@ def _moment_relationship(joined: pd.DataFrame, figures: Path) -> None:
         ax.set_ylabel("Final performance")
         ax.grid(alpha=0.25)
     handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper center", ncol=min(6, len(labels)))
-    fig.suptitle("Moment error versus control performance", y=1.03)
+    fig.legend(
+        handles, labels, loc="lower center", bbox_to_anchor=(0.5, -0.05),
+        ncol=min(6, len(labels)),
+    )
+    fig.suptitle("Moment error versus control performance", y=1.0)
     _finish(fig, figures / "moment_error_vs_control_performance.png")
 
 
@@ -167,8 +176,11 @@ def _eigen_spectra(representation: pd.DataFrame, figures: Path) -> None:
         ax.set_ylabel("Covariance eigenvalue")
         ax.grid(alpha=0.25)
     handles, labels = axes[0, 0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper center", ncol=min(6, max(1, len(labels))))
-    fig.suptitle("Representation covariance eigenvalue spectra", y=1.02)
+    fig.legend(
+        handles, labels, loc="lower center", bbox_to_anchor=(0.5, -0.02),
+        ncol=min(6, max(1, len(labels))),
+    )
+    fig.suptitle("Representation covariance eigenvalue spectra", y=1.0)
     _finish(fig, figures / "covariance_eigenvalue_spectra.png")
 
 

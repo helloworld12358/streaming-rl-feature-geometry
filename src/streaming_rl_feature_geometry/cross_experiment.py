@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import platform
+import re
 import socket
 import sys
 import time
@@ -41,6 +42,7 @@ GENERIC_CONDITIONS = {
     "bounded",
 }
 CROSS_CONDITIONS = BASELINE_CONDITIONS | GENERIC_CONDITIONS | {"matched"}
+RUN_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 def load_cross_config(path: str | Path) -> dict[str, Any]:
@@ -64,9 +66,28 @@ def load_cross_config(path: str | Path) -> dict[str, Any]:
     unknown_envs = set(config["environments"]) - set(ENVIRONMENT_IDS)
     if unknown_envs:
         raise ValueError(f"unknown environments: {sorted(unknown_envs)}")
+    if not config["seeds"] or len(config["seeds"]) != len(set(config["seeds"])):
+        raise ValueError("seeds must be a non-empty unique list")
+    if not config["horizons"] or any(
+        not 0.0 <= float(value) < 1.0 for value in config["horizons"]
+    ):
+        raise ValueError("horizons must be a non-empty list in [0, 1)")
+    if len(config["horizons"]) != len(set(map(float, config["horizons"]))):
+        raise ValueError("horizons must be unique")
+    if int(config["trace_dim"]) < 1:
+        raise ValueError("trace_dim must be positive")
+    for key in ("predictive_alpha", "control_alpha"):
+        if float(config[key]) <= 0:
+            raise ValueError(f"{key} must be positive")
+    if not 0 <= float(config["gamma"]) < 1:
+        raise ValueError("gamma must be in [0, 1)")
+    if not 0 <= float(config["lambda"]) <= 1 or not 0 <= float(config["epsilon"]) <= 1:
+        raise ValueError("lambda and epsilon must be in [0, 1]")
     for env_id, spec in config["environments"].items():
         if int(spec["interactions"]) < 1:
             raise ValueError(f"{env_id} interactions must be positive")
+        if not spec["conditions"] or len(spec["conditions"]) != len(set(spec["conditions"])):
+            raise ValueError(f"{env_id} conditions must be a non-empty unique list")
         unknown_conditions = set(spec["conditions"]) - CROSS_CONDITIONS
         if unknown_conditions:
             raise ValueError(f"unknown {env_id} conditions: {sorted(unknown_conditions)}")
@@ -114,6 +135,16 @@ def _manifest_base(
 
 def _controller_features(observation: np.ndarray, state: np.ndarray) -> np.ndarray:
     return np.concatenate((observation, state, np.ones(1, dtype=np.float64)))
+
+
+def _controller_state(condition: str, environment: Any, transformed: np.ndarray) -> np.ndarray:
+    """Build agent state; only the explicit oracle branch may read oracle features."""
+
+    if condition == "observation_only":
+        return np.empty(0, dtype=np.float64)
+    if condition == "oracle":
+        return environment.oracle_features.copy()
+    return transformed.copy()
 
 
 def _diagnostic_features(
@@ -174,13 +205,7 @@ def _execute_cross_run(
     raw = bank.features(observation)
     transform = _make_transform(condition, environment, bank.d, config)
     transformed = _transform(transform, raw) if condition not in BASELINE_CONDITIONS else np.empty(0)
-    state = (
-        np.empty(0)
-        if condition == "observation_only"
-        else env.oracle_features.copy()
-        if condition == "oracle"
-        else transformed
-    )
+    state = _controller_state(condition, env, transformed)
     features = _controller_features(observation, state)
     controller = SarsaLambda(
         env.n_actions,
@@ -203,6 +228,7 @@ def _execute_cross_run(
     recent_correct: deque[float] = deque(maxlen=config["moving_window"])
     all_rewards: list[float] = []
     all_correct: list[float] = []
+    all_stabilized: list[float] = []
     control_deltas: list[float] = []
     control_updates: list[float] = []
     predictive_updates: list[float] = []
@@ -224,13 +250,7 @@ def _execute_cross_run(
             if condition not in BASELINE_CONDITIONS
             else np.empty(0)
         )
-        next_state = (
-            np.empty(0)
-            if condition == "observation_only"
-            else env.oracle_features.copy()
-            if condition == "oracle"
-            else next_transformed
-        )
+        next_state = _controller_state(condition, env, next_transformed)
         next_features = _controller_features(next_observation, next_state)
         next_action = controller.act(next_features)
         control_delta, update_norm, parameter_norm = controller.update(
@@ -265,6 +285,8 @@ def _execute_cross_run(
                     "reward": reward,
                 }
             )
+        if info.stabilized is not None:
+            all_stabilized.append(float(info.stabilized))
 
         moving_reward = float(np.mean(recent_rewards))
         moving_performance = (
@@ -348,9 +370,11 @@ def _execute_cross_run(
         "final_window_reward": final_reward,
         "final_performance": final_performance,
         "time_to_threshold": threshold_time,
-        "stabilization_rate": float(
-            np.nanmean([row["stabilized"] for row in step_rows])
-        ) if environment == "hidden_velocity" else 0.0,
+        "stabilization_rate": float(np.mean(all_stabilized)) if all_stabilized else 0.0,
+        "final_window_stabilization": float(
+            np.mean(all_stabilized[-config["final_window"] :])
+        ) if all_stabilized else 0.0,
+        "control_cost": float(-np.mean(all_rewards)) if environment == "hidden_velocity" else 0.0,
         "predictive_td_mse": float(np.mean(predictive_mse)),
         "control_td_variance": float(np.var(control_deltas)),
         "mean_control_update_norm": float(np.mean(control_updates)),
@@ -367,7 +391,20 @@ def _execute_cross_run(
     }
 
     pd.DataFrame(step_rows).to_csv(run_dir / "step_metrics.csv", index=False)
-    pd.DataFrame(decision_rows).to_csv(run_dir / "decision_metrics.csv", index=False)
+    pd.DataFrame(
+        decision_rows,
+        columns=(
+            "t",
+            "environment",
+            "condition",
+            "seed",
+            "group",
+            "position",
+            "correct",
+            "moving_accuracy",
+            "reward",
+        ),
+    ).to_csv(run_dir / "decision_metrics.csv", index=False)
     pd.DataFrame(prediction_rows).to_csv(run_dir / "prediction_metrics.csv", index=False)
     pd.DataFrame(update_rows).to_csv(run_dir / "update_metrics.csv", index=False)
     pd.DataFrame([representation]).to_csv(run_dir / "representation_metrics.csv", index=False)
@@ -428,7 +465,14 @@ def run_cross_one(task: tuple[dict[str, Any], str, str, int, str]) -> dict[str, 
 
 
 def _read_many(paths: list[Path]) -> pd.DataFrame:
-    frames = [pd.read_csv(path) for path in paths if path.exists() and path.stat().st_size]
+    frames = []
+    for path in paths:
+        if not path.exists() or path.stat().st_size <= 1:
+            continue
+        try:
+            frames.append(pd.read_csv(path))
+        except pd.errors.EmptyDataError:
+            continue
     return pd.concat(frames, ignore_index=True, sort=False) if frames else pd.DataFrame()
 
 
@@ -486,6 +530,26 @@ def validate_cross_results(root: str | Path, config: dict[str, Any]) -> dict[str
     if not (summaries["run_status"] == "ok").all():
         raise AssertionError("at least one cross-environment run failed")
     for run_dir in sorted((root / "runs").glob("*/*/seed_*")):
+        required = {
+            "config.json",
+            "manifest.json",
+            "predictive_definitions.json",
+            "step_metrics.csv",
+            "decision_metrics.csv",
+            "prediction_metrics.csv",
+            "update_metrics.csv",
+            "representation_metrics.csv",
+            "task_information_metrics.csv",
+            "summary.csv",
+            "summary.json",
+            "diagnostic_samples.npz",
+            "predictive_weights.npy",
+            "stdout.log",
+            "figures",
+        }
+        missing = sorted(required - {path.name for path in run_dir.iterdir()})
+        if missing:
+            raise AssertionError(f"{run_dir} is missing {missing}")
         manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
         if manifest["exit_status"] != "ok":
             raise AssertionError(f"failed manifest {run_dir}")
@@ -499,8 +563,14 @@ def smoke_cross_assertions(root: str | Path, config: dict[str, Any]) -> None:
         frame = summaries[summaries["environment"] == environment]
         oracle = frame.query("condition == 'oracle'")["final_performance"].mean()
         observation = frame.query("condition == 'observation_only'")["final_performance"].mean()
-        tolerance = 0.0 if environment != "hidden_velocity" else -0.05
-        if oracle <= observation + tolerance:
+        spec = config["environments"][environment]
+        minimum = float(spec.get("oracle_minimum", -np.inf))
+        gap = float(spec.get("oracle_gap", 0.0))
+        if oracle < minimum:
+            raise AssertionError(
+                f"{environment} oracle performance {oracle:.4f} is below {minimum:.4f}"
+            )
+        if oracle <= observation + gap:
             raise AssertionError(f"{environment} oracle did not outperform observation-only")
     if not list((Path(root) / "figures").glob("*.png")):
         raise AssertionError("cross smoke generated no real figures")
@@ -516,6 +586,8 @@ def main() -> None:
     parser.add_argument("--aggregate-only", action="store_true")
     args = parser.parse_args()
     config = load_cross_config(args.config)
+    if not RUN_NAME_PATTERN.fullmatch(args.run_name):
+        parser.error("--run-name may contain only letters, digits, dot, underscore, and hyphen")
     is_full = bool(config.get("remote_full", False) or "full" in config["profile"])
     if is_full and not (args.allow_full_run and os.environ.get("RL_RUN_CONTEXT") == "remote"):
         raise SystemExit(

@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 
 from streaming_rl_feature_geometry.cross_experiment import (
+    _read_many,
     load_cross_config,
     run_cross_one,
 )
@@ -133,3 +134,12 @@ def test_repository_cross_configs_load_and_preserve_three_pilot_seeds():
     assert set(smoke["environments"]) == set(pilot["environments"])
     assert pilot["seeds"] == [0, 1, 2]
     assert all("matched" in spec["conditions"] for spec in pilot["environments"].values())
+
+
+def test_cross_aggregation_reader_skips_structurally_empty_tables(tmp_path):
+    empty = tmp_path / "empty.csv"
+    empty.write_text("\n", encoding="utf-8")
+    populated = tmp_path / "populated.csv"
+    pd.DataFrame([{"value": 3.0}]).to_csv(populated, index=False)
+    frame = _read_many([empty, populated])
+    assert frame.to_dict(orient="records") == [{"value": 3.0}]
