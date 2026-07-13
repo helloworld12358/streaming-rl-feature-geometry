@@ -111,6 +111,22 @@ RL_RUN_CONTEXT=remote scripts/run_full_remote.sh --allow-full-run --config confi
 
 The shell launcher and Python runner both require the environment variable and flag. Full runs have **not** been executed locally or remotely during this goal. The E1 adaptation hypothesis therefore remains unverified. See `docs/CROSS_ENV_REMOTE_RUN_GUIDE_ZH.md`.
 
+## Privacy-safe publication mapping
+
+GitHub previously rejected unpublished commits whose metadata exposed the account's protected email. Before the first extension-branch push, all 20 commits after the already-published core base were replayed with `helloworld12358@users.noreply.github.com`. The extension branch did not exist in the fetched remote refs, no force push was used, and every rewritten checkpoint has the same Git tree as its recorded local-run commit.
+
+| Evidence checkpoint | Manifest/local SHA | Publication SHA | Identical tree |
+|---|---|---|---|
+| Property diagnostics v1 | `f40284c` | `84d25ac` | `33180b2fe9c49337ac27e52583622360d5f47fa0` |
+| Frozen main pilot | `408dcf6` | `bebd4bf` | `b56081a002f5b69087072e9f50514db5096b877a` |
+| Formal smoke / compact / short profiles | `f18cc36` | `53ecf8a` | `537a508b630c188b77d8f86ed3b450d241d87c54` |
+| Paired mixed / matched-horizon profiles | `55fb480` | `4504518` | `db5376111312c9181f3dc42b0a749a25ec61085d` |
+| Property diagnostics v2 | `ca9e884` | `5eb6f65` | `702fc0408490044a4def706607ea8fefd820f6c7` |
+| Reconciled cross smoke v1 | `b47ef2c` | `3453042` | `42e6037ce4ad5e33fd1f10f5613a9f4f50370f64` |
+| Final core/cross smoke v2 checkpoint | `c65f8e8` | `4489884` | `aacf9588bcb32215de4085fbf041105b1fc572d5` |
+
+The old SHAs remain evidence identifiers inside ignored local manifests; the publication SHAs are the corresponding checkout points in the pushed branch.
+
 ## Documentation map
 
 - Normative goal/spec: `COMPLETE_OVERNIGHT_MASTER_GOAL.md`, `CROSS_ENV_EXTENSION_SPEC.md`.

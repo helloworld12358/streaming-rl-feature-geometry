@@ -40,5 +40,6 @@ Final test, Git review, push, and PR status are appended at completion.
 | 00:xx | Added synthetic and real-stream circular phase-order checks. Formal diagnostics v2 passed 29/30 and exited nonzero because E2 real-stream alignment `0.2406` missed the fixed `0.3` threshold. | Preserved failed v2 and did not lower the threshold. |
 | 00:xx | Prepared guarded 20-seed main/compact/short/E1-nonstationary configs and extended Linux bootstrap/full/aggregate/package scripts. Local guard probes exited 2 without creating full results. | Remote full remains explicitly unrun. |
 | 00:43-00:47 | Added four independently runnable environment-specific remote profiles, passed 19 targeted tests and the 72-test full suite, then completed a clean 20/20 cross smoke with 15 figures. | Closed the explicit environment-specific-config gap without executing any full profile. |
+| 00:xx | Before the first extension push, verified no fetched remote extension ref and replayed only the 20 unpublished post-core commits with the GitHub no-reply identity. Tree hashes were unchanged and mapped in the completion reconciliation. | Avoided the known GH007 protected-email rejection without global config changes or force push. |
 
 Final extension QA, push, and Draft PR status follow in the final publication checkpoint.
