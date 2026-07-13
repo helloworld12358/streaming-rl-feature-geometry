@@ -231,6 +231,23 @@ def synthetic_diagnostics(
         np.max(np.abs(np.linalg.norm(circle, axis=1) - 1.0)) < 1e-10,
         f"mean_radius={np.mean(np.linalg.norm(circle, axis=1)):.6f}",
     )
+    phase_input = semantic.copy()
+    phase_input[:, 0] = np.cos(angles)
+    phase_input[:, 1] = np.sin(angles)
+    phase_transform = TaskMatchedTransform("circular", semantic.shape[1])
+    phase_output = np.vstack([phase_transform.transform(row) for row in phase_input])[burn:]
+    predicted_angles = np.arctan2(phase_output[:, 1], phase_output[:, 0])
+    phase_alignment = float(
+        np.abs(np.mean(np.exp(1j * (predicted_angles - angles[burn:]))))
+    )
+    add_check(
+        checks,
+        "circular",
+        "synthetic",
+        "phase order preserved",
+        phase_alignment > 0.95,
+        f"circular_phase_alignment={phase_alignment:.6f}",
+    )
     block = matched_outputs["block"][burn:]
     add_check(
         checks,
@@ -273,12 +290,15 @@ def real_stream_diagnostics() -> tuple[pd.DataFrame, pd.DataFrame, dict[str, np.
         transform = TaskMatchedTransform(prior_name, bank.d)
         prediction = bank.features(env.observation)
         output_rows = []
+        latent_rows = []
         for step in range(6000):
             output_rows.append(transform.transform(prediction))
+            latent_rows.append(env.latent_state.copy())
             next_observation, _, info = env.step(step % env.n_actions)
             bank.update(next_observation, info.events)
             prediction = bank.features(next_observation)
         output = np.asarray(output_rows[1000:])
+        latents = np.asarray(latent_rows[1000:])
         samples[environment] = output
         metrics = rep_metrics(output)
         rows.append(
@@ -310,6 +330,27 @@ def real_stream_diagnostics() -> tuple[pd.DataFrame, pd.DataFrame, dict[str, np.
             passed = 4.0 <= ratio <= 18.0
             evidence = f"real_stream_variance_ratio={ratio:.4f}; target=9.0"
         add_check(checks, prior_name, environment, "real-stream named property", passed, evidence)
+        if prior_name == "circular":
+            predicted_angles = np.arctan2(output[:, 1], output[:, 0])
+            true_angles = latents[:, 1]
+            forward = np.abs(np.mean(np.exp(1j * (predicted_angles - true_angles))))
+            reverse = np.abs(np.mean(np.exp(1j * (predicted_angles + true_angles))))
+            alignment = float(max(forward, reverse))
+            shuffled = np.random.default_rng(20260713).permutation(predicted_angles)
+            shuffled_alignment = float(
+                max(
+                    np.abs(np.mean(np.exp(1j * (shuffled - true_angles)))),
+                    np.abs(np.mean(np.exp(1j * (shuffled + true_angles)))),
+                )
+            )
+            add_check(
+                checks,
+                prior_name,
+                environment,
+                "real-stream phase order",
+                alignment > 0.3 and alignment > shuffled_alignment + 0.2,
+                f"alignment={alignment:.4f}; shuffled={shuffled_alignment:.4f}",
+            )
     return pd.DataFrame(rows), pd.DataFrame(checks), samples
 
 
