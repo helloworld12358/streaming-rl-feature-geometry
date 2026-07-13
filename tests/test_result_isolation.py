@@ -61,12 +61,14 @@ def test_validation_allows_not_applicable_transform_metrics_for_baseline(tmp_pat
     root = tmp_path / "baseline-and-raw"
     root.mkdir()
     config = tiny_config(tmp_path)
-    config["conditions"] = ["observation_only", "raw"]
+    config["conditions"] = ["observation_only", "raw", "gaussian_moment"]
     for condition in config["conditions"]:
         run_one((config, condition, 0, str(root)))
     aggregate(root)
 
     summaries = pd.read_csv(root / "aggregate_summary.csv")
     baseline = summaries.query("condition == 'observation_only'").iloc[0]
+    raw = summaries.query("condition == 'raw'").iloc[0]
     assert pd.isna(baseline["transform_condition_number"])
-    assert validate_results(root, config)["runs"] == 2
+    assert pd.isna(raw["gaussian_parameter_change_mean"])
+    assert validate_results(root, config)["runs"] == 3

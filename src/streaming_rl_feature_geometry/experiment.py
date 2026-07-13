@@ -554,7 +554,7 @@ def validate_results(
     summaries = pd.read_csv(root / "aggregate_summary.csv")
     if summaries.empty or not (summaries["run_status"] == "ok").all():
         raise AssertionError("not every run completed successfully")
-    optional_transform_metrics = {
+    base_transform_metrics = {
         "raw_rms",
         "scale_factor",
         "transformed_rms",
@@ -564,6 +564,15 @@ def validate_results(
         "transform_matrix_change_max",
         "transform_refreshes",
     }
+    gaussian_transform_metrics = {
+        "gaussian_parameter_change_mean",
+        "gaussian_parameter_change_max",
+        "gaussian_skew_parameter_mean",
+        "gaussian_tail_parameter_mean",
+        "gaussian_ew_skewness_error",
+        "gaussian_ew_kurtosis_error",
+    }
+    optional_transform_metrics = base_transform_metrics | gaussian_transform_metrics
     required_summary_metrics = [
         column
         for column in summaries.select_dtypes(include=[np.number]).columns
@@ -573,9 +582,14 @@ def validate_results(
         raise AssertionError("non-finite required summary metrics")
     transformed = summaries[~summaries["condition"].isin(BASELINE_CONDITIONS)]
     if not transformed.empty and not np.isfinite(
-        transformed[sorted(optional_transform_metrics)].to_numpy()
+        transformed[sorted(base_transform_metrics)].to_numpy()
     ).all():
         raise AssertionError("non-finite transform metrics for transformed condition")
+    gaussian = summaries[summaries["condition"] == "gaussian_moment"]
+    if not gaussian.empty and not np.isfinite(
+        gaussian[sorted(gaussian_transform_metrics)].to_numpy()
+    ).all():
+        raise AssertionError("non-finite Gaussian-inspired transform metrics")
     expected = None
     if config is not None:
         expected = len(config["conditions"]) * len(config["seeds"])
@@ -620,9 +634,14 @@ def validate_results(
                     raise AssertionError("missing or non-finite in-range covariance eigenvalue")
             transformed = frame[~frame["condition"].isin(BASELINE_CONDITIONS)]
             if not transformed.empty and not np.isfinite(
-                transformed[sorted(optional_transform_metrics)].to_numpy()
+                transformed[sorted(base_transform_metrics)].to_numpy()
             ).all():
                 raise AssertionError("non-finite representation transform metrics")
+            gaussian = frame[frame["condition"] == "gaussian_moment"]
+            if not gaussian.empty and not np.isfinite(
+                gaussian[sorted(gaussian_transform_metrics)].to_numpy()
+            ).all():
+                raise AssertionError("non-finite Gaussian-inspired representation metrics")
     return {
         "result_dir": str(root.resolve()),
         "runs": len(summaries),
