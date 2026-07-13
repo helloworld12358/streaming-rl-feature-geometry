@@ -39,5 +39,6 @@ Final test, Git review, push, and PR status are appended at completion.
 | 00:xx | Main and paired pilot analysis showed E3 positive signals, E1 null, E2 uncertainty, E4 often favoring raw, and no universal matched-prior advantage. | Reported mean ± SEM and paired differences; retained negative/null findings. |
 | 00:xx | Added synthetic and real-stream circular phase-order checks. Formal diagnostics v2 passed 29/30 and exited nonzero because E2 real-stream alignment `0.2406` missed the fixed `0.3` threshold. | Preserved failed v2 and did not lower the threshold. |
 | 00:xx | Prepared guarded 20-seed main/compact/short/E1-nonstationary configs and extended Linux bootstrap/full/aggregate/package scripts. Local guard probes exited 2 without creating full results. | Remote full remains explicitly unrun. |
+| 00:43-00:47 | Added four independently runnable environment-specific remote profiles, passed 19 targeted tests and the 72-test full suite, then completed a clean 20/20 cross smoke with 15 figures. | Closed the explicit environment-specific-config gap without executing any full profile. |
 
 Final extension QA, push, and Draft PR status follow in the final publication checkpoint.

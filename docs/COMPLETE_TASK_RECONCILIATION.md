@@ -60,7 +60,7 @@ Completed components:
 9. Isolated environment/condition/seed configs, manifests, logs, CSVs, weights, definitions, diagnostic samples, validation, aggregation, and Matplotlib figures.
 10. Synthetic and real-stream machine-readable property diagnostics.
 11. Cross smoke, three-seed main pilot, and paired same-budget bank/horizon ablations.
-12. 20-seed main/compact/short/non-stationary remote configs, reusable guarded scripts, packaging, and Chinese instructions.
+12. A 20-seed cross suite, four environment-specific full profiles, compact/short/non-stationary remote configs, reusable guarded scripts, packaging, and Chinese instructions.
 
 The original core runner and commands remain available; Stage B uses `run_cross_experiment.py` alongside them.
 
@@ -68,19 +68,20 @@ The original core runner and commands remain available; Stage B uses `run_cross_
 
 ### Tests and guards
 
-- Final pre-document full suite: 72 passed in 31.37 seconds.
+- Final pre-push full suite after the environment-specific profiles: 72 passed in 27.30 seconds.
 - Cross-runner/config/environment/guard targeted gate: 30 passed.
 - Git-Bash syntax check: `bootstrap_remote.sh`, `run_full_remote.sh`, and `aggregate_remote.sh` passed.
 - Local `run_full_remote.sh` and `aggregate_remote.sh` probes both refused with exit code 2; no full output directory was created.
 
 ### Cross diagnostics
 
-- v1: 24/24 checks then present, top `ok`, but lacked the required phase-order check and is not the final diagnostic.
+- v1: 28/28 checks then present, top `ok`, but lacked the required phase-order check and is not the final diagnostic.
 - v2: 29/30, top `failed`, retained. E2 unit-circle radius passes, but real-stream phase alignment `0.2406` is below the fixed `0.3` threshold (shuffled `0.0098`). No threshold was lowered.
 
 ### Cross smoke and pilots
 
 - Smoke: 20/20, top `ok`, 15 real figures, clean commit `f18cc36`.
+- Final reconciled cross smoke: 20/20, top `ok`, 15 real figures, clean commit `b47ef2c`.
 - Main pilot: 120/120, top `ok`, clean commit `408dcf6`.
 - Compact/mixed paired bank batches: 24/24 and 24/24, both `ok`.
 - Short/matched paired horizon batches: 12/12 and 12/12, both `ok`.

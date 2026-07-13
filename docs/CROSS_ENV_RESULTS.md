@@ -8,7 +8,7 @@ These are local three-seed pilot results, not final inference. No hyperparameter
 
 | Batch | Result path | Runs | Manifest | Clean commit |
 |---|---|---:|---|---|
-| Property diagnostics v1 | `results/diagnostics/cross_environment/preregistered-cross-20260713-v1` | 24 checks | `ok`, but phase-order check was not yet present | `f40284c` |
+| Property diagnostics v1 | `results/diagnostics/cross_environment/preregistered-cross-20260713-v1` | 28/28 checks | `ok`, but phase-order check was not yet present | `f40284c` |
 | Property diagnostics v2 | `results/diagnostics/cross_environment/preregistered-cross-20260713-v2` | 29/30 checks | `failed`, retained | `ca9e884` |
 | Cross smoke | `results/cross_smoke/preregistered-cross-smoke-20260713-v1` | 20/20 | `ok` | `f18cc36` |
 | Main pilot | `results/cross_pilot/preregistered-cross-pilot-20260713-v1` | 120/120 | `ok` | `408dcf6` |
@@ -18,6 +18,14 @@ These are local three-seed pilot results, not final inference. No hyperparameter
 | Same-budget matched horizon | `results/cross_pilot_matched_horizon/preregistered-cross-pilot-matched-horizon-20260713-v1` | 12/12 | `ok` | `55fb480` |
 
 All result directories are ignored by Git and remain isolated. Re-aggregation with the current validator found the expected number of unique environment/condition/seed summaries.
+
+The main pilot's recorded command was:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\run_cross_experiment.py --config configs\cross_pilot.json --workers 4 --run-name preregistered-cross-pilot-20260713-v1
+```
+
+Its top-level manifest reports 466.74 seconds elapsed (7 minutes 46.74 seconds), clean commit `408dcf6`, 120 unique runs, and 1,680,000 total interactions.
 
 ## Property fulfillment
 

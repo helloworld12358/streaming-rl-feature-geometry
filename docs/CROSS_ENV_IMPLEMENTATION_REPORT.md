@@ -43,8 +43,9 @@ Both the Python runner and Linux launcher require `RL_RUN_CONTEXT=remote` and `-
 
 ## Verification status
 
-- Full local suite after extension: 72 passed in 31.37 seconds.
+- Final pre-push local suite after the environment-specific profiles: 72 passed in 27.30 seconds.
 - Formal cross smoke: 20/20 runs, top manifest `ok`, 15 real figures.
+- Final cross smoke on the reconciled code/docs checkpoint: 20/20, top manifest `ok`, clean commit `b47ef2c`.
 - Formal main pilot: 120/120 runs, top manifest `ok`.
 - Compact/mixed bank ablation: 24/24 plus 24/24 runs, both `ok`.
 - Short/matched horizon ablation: 12/12 plus 12/12 runs, both `ok`.
