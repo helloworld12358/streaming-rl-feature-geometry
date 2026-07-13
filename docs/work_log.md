@@ -20,5 +20,6 @@ Times are Asia/Shanghai on 2026-07-13 unless noted. No credentials are recorded.
 | 23:xx | Independently recomputed seed means/SEM, inspected saved figures, and separated property/control findings. | Three-seed observations are caveated; no post-pilot tuning. |
 | 23:xx | Final full suite: 32 passed in 44.62 s; all Bash/PowerShell launcher syntax checks passed; pilot validator confirmed 30/30 expected runs. | Stage A evidence and launch package passed the pre-commit gate. |
 | 23:xx | First push was rejected with GH007 because commit metadata would expose a protected private email. Rewrote only the three unpublished feature commits with the GitHub no-reply address; code trees were unchanged. | Preserved the pilot manifest SHA-to-published-tree mapping; did not alter global Git config or use force push. |
+| 23:xx | Pushed `codex/predictive-feature-properties` to the existing origin successfully after the privacy-safe rewrite. GitHub CLI was unavailable, so no Draft PR was created automatically; GitHub supplied the manual new-PR page. | Stage A remote branch exists; do not claim a PR exists until the manual page is submitted. |
 
 Final test, Git review, push, and PR status are appended at completion.
