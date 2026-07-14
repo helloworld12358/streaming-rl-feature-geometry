@@ -12,3 +12,18 @@ The primary research question is whether prescribed statistical and geometric pr
 - Add or update tests for causal order, finiteness, reproducibility, isolation, and guards. Run the full suite plus smoke before handoff.
 - Keep README, research specification, implementation report, proposals, and remote guide consistent with the executable configs and commands.
 - Never store credentials or large raw result artifacts in Git.
+
+## Collaboration workflow
+
+Web ChatGPT handles research analysis, requirement decomposition, cloud-operation explanation, log/result analysis, and GitHub/PR/commit review, then turns them into explicit Codex tasks. Local Codex reads and edits the repository, updates scripts/configuration/documentation, runs explicitly requested checks, commits and pushes, and returns changed files, test evidence, and the commit SHA. Operational instructions belong in repository run guides and the final structured handoff. Do not assume access to the user's web ChatGPT session; exchange state through the GitHub branch, repository documents, and the handoff while preserving every research constraint above.
+
+## Pre-existing worktree changes
+
+- A dirty worktree is not by itself a reason to stop.
+- First inspect `git status`, `git diff`, and `git diff --cached`, and classify the existing changes.
+- Changes clearly left by an earlier Codex execution of the same Goal, or explicitly identified by the user as prior Codex work, are authorized for in-place continuation.
+- Preserve valid content, reconcile it with the current Goal, test it, and include it in the intended commit.
+- Do not repeatedly request confirmation for the same already-authorized Codex leftovers.
+- Leave clearly unrelated changes untouched and exclude them from the task commit.
+- Stop only when provenance is genuinely ambiguous, merge conflicts exist, credentials are present, or continuing would require destructive Git operations.
+- Never use `git reset --hard`, `git clean`, force push, or discard unknown changes without explicit user authorization.

@@ -39,15 +39,36 @@ if ! [[ "$WORKERS" =~ ^[1-9][0-9]*$ ]]; then
 fi
 
 cd "$(dirname "$0")/.."
-source .venv/bin/activate
-AVAILABLE_CPUS="$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc)"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
+export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-1}"
+export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
+export NUMEXPR_NUM_THREADS="${NUMEXPR_NUM_THREADS:-1}"
+
+ONLINE_CPUS="$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc)"
+AVAILABLE_CPUS="$ONLINE_CPUS"
+if [[ -r /sys/fs/cgroup/cpu.max ]]; then
+  read -r CGROUP_QUOTA CGROUP_PERIOD < /sys/fs/cgroup/cpu.max
+  if [[ "$CGROUP_QUOTA" != "max" \
+      && "$CGROUP_QUOTA" =~ ^[0-9]+$ \
+      && "$CGROUP_PERIOD" =~ ^[1-9][0-9]*$ ]]; then
+    CGROUP_CPUS=$(( CGROUP_QUOTA / CGROUP_PERIOD ))
+    if (( CGROUP_CPUS < 1 )); then
+      CGROUP_CPUS=1
+    fi
+    if (( CGROUP_CPUS < AVAILABLE_CPUS )); then
+      AVAILABLE_CPUS="$CGROUP_CPUS"
+    fi
+  fi
+fi
 SAFE_MAX=$(( AVAILABLE_CPUS > 1 ? AVAILABLE_CPUS - 1 : 1 ))
 if (( WORKERS > SAFE_MAX )); then
-  echo "Requested $WORKERS workers but safe maximum is $SAFE_MAX; choose a smaller value." >&2
+  echo "Requested $WORKERS workers but safe maximum is $SAFE_MAX (available CPUs: $AVAILABLE_CPUS); choose a smaller value." >&2
   exit 2
 fi
 
-readarray -t CONFIG_METADATA < <(python - "$CONFIG" <<'PY'
+readarray -t CONFIG_METADATA < <("$PYTHON_BIN" - "$CONFIG" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -69,7 +90,7 @@ if [[ "$RUNNER_KIND" == "cross" ]]; then
 else
   RUNNER="scripts/run_experiment.py"
 fi
-python "$RUNNER" \
+"$PYTHON_BIN" "$RUNNER" \
   --config "$CONFIG" \
   --allow-full-run \
   --workers "$WORKERS" \

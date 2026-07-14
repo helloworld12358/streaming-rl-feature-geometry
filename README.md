@@ -48,7 +48,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 ```
 
-Python 3.11 is the supported runtime. Dependencies are intentionally limited to NumPy, pandas, Matplotlib, and pytest.
+Python >= 3.10 is supported. The Windows local workflow above intentionally keeps its repository-local `.venv`; the remote Linux workflow uses the current active/base Python instead. Dependencies are intentionally limited to NumPy, pandas, Matplotlib, and pytest.
 
 ## 10. Unit tests
 
@@ -79,10 +79,11 @@ The 20-seed full profiles are blocked unless both safeguards are present: `RL_RU
 ## 14. Remote command
 
 ```bash
-RL_RUN_CONTEXT=remote scripts/run_full_remote.sh --allow-full-run --config configs/full_stationary.json --workers 4 --run-name full-stationary-<COMMIT_SHA>
+export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
+RL_RUN_CONTEXT=remote scripts/run_full_remote.sh --allow-full-run --config configs/full_stationary.json --workers 16 --run-name full-stationary-<COMMIT_SHA>
 ```
 
-See `docs/REMOTE_RUN_GUIDE_ZH.md` before launching the stationary 200,000-interaction or non-stationary 300,000-interaction suite.
+The current cloud platform uses Ubuntu 22.04.4, Python 3.10.12 at `/usr/bin/python3`, a 20-CPU cgroup quota, and an 80-GiB memory limit even though 128 logical CPUs and much more host memory are visible. Remote Linux installation uses `python3 -m pip install -e '.[dev]'` in the active/base Python without creating a venv or upgrading pip. Start this environment at 16 workers; 32, 48, or 128 are not suitable defaults. See `docs/CLOUD_PLATFORM_RUNBOOK_ZH.md` and `docs/REMOTE_RUN_GUIDE_ZH.md` before launching full experiments.
 
 ## 15. Results directories
 
@@ -119,7 +120,7 @@ Local pilot evidence uses seeds 0-2 and a staged matrix. Same-budget compact/mix
 The 20-seed cross full suite is prepared but has not been run. On a real remote Linux machine only:
 
 ```bash
-RL_RUN_CONTEXT=remote scripts/run_full_remote.sh --allow-full-run --config configs/cross_full.json --workers 4 --run-name cross-full-<COMMIT_SHA>
+RL_RUN_CONTEXT=remote scripts/run_full_remote.sh --allow-full-run --config configs/cross_full.json --workers 16 --run-name cross-full-<COMMIT_SHA>
 ```
 
 Four environment-specific `cross_full_<environment>.json` configs and the selected `cross_full_compact.json`, `cross_full_short_horizon.json`, and `cross_full_nonstationary.json` suites remain separately guarded. Follow `docs/CROSS_ENV_REMOTE_RUN_GUIDE_ZH.md`.

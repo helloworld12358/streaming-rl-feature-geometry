@@ -49,7 +49,7 @@ Failed pilot batches are preserved: v1 completed all child runs but an over-broa
 
 ## Remote readiness
 
-`configs/full_stationary.json` and `configs/full_nonstationary.json` define 20-seed CPU studies at 200k and 300k interactions. Both environment variable `RL_RUN_CONTEXT=remote` and flag `--allow-full-run` are mandatory. Remote scripts validate Python, create `.venv`, run tests/smoke, enforce a CPU safety margin, preserve failed-seed manifests, verify completeness, regenerate aggregates/figures, and package artifacts. The exact user procedure is in `docs/REMOTE_RUN_GUIDE_ZH.md`.
+`configs/full_stationary.json` and `configs/full_nonstationary.json` define 20-seed CPU studies at 200k and 300k interactions. Both environment variable `RL_RUN_CONTEXT=remote` and flag `--allow-full-run` are mandatory. Current remote Linux scripts require Python >= 3.10, use the active/base interpreter selected by `PYTHON_BIN` (default `python3`), install with `python3 -m pip install -e '.[dev]'`, and do not create or activate a venv. They cap BLAS libraries at one thread per worker, account for a cgroup v2 `cpu.max` quota before enforcing the one-CPU safety margin, preserve failed-seed manifests, verify completeness, regenerate aggregates/figures, and package artifacts. The measured cloud platform uses Python 3.10.12, a 20-CPU cgroup quota, and an 80-GiB memory limit; its recommended starting point is 16 workers. The exact user procedure is in `docs/CLOUD_PLATFORM_RUNBOOK_ZH.md` and `docs/REMOTE_RUN_GUIDE_ZH.md`.
 
 ## Cross-environment extension handoff
 

@@ -22,9 +22,9 @@ if [[ "${RL_RUN_CONTEXT:-}" != "remote" ]]; then
 fi
 
 cd "$(dirname "$0")/.."
-source .venv/bin/activate
+PYTHON_BIN="${PYTHON_BIN:-python3}"
 
-python - "$CONFIG" "$RUN_DIR" <<'PY'
+"$PYTHON_BIN" - "$CONFIG" "$RUN_DIR" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -64,7 +64,7 @@ if missing or failed:
 print(f"Completeness check passed: {count} runs")
 PY
 
-if python - "$CONFIG" <<'PY'
+if "$PYTHON_BIN" - "$CONFIG" <<'PY'
 import json
 import sys
 
@@ -73,19 +73,19 @@ with open(sys.argv[1], encoding="utf-8") as handle:
 raise SystemExit(0 if is_cross else 1)
 PY
 then
-  python scripts/run_cross_experiment.py \
+  "$PYTHON_BIN" scripts/run_cross_experiment.py \
     --config "$CONFIG" \
     --allow-full-run \
     --aggregate-only \
     --output-dir "$(dirname "$RUN_DIR")" \
     --run-name "$(basename "$RUN_DIR")"
 else
-  python scripts/run_experiment.py \
+  "$PYTHON_BIN" scripts/run_experiment.py \
     --config "$CONFIG" \
     --allow-full-run \
     --aggregate-only \
     --output-dir "$RUN_DIR"
-  python scripts/validate_results.py "$RUN_DIR" --config "$CONFIG"
+  "$PYTHON_BIN" scripts/validate_results.py "$RUN_DIR" --config "$CONFIG"
 fi
 tar -czf "${RUN_DIR%/}.tar.gz" -C "$(dirname "$RUN_DIR")" "$(basename "$RUN_DIR")"
 echo "Validated aggregate and package: ${RUN_DIR%/}.tar.gz"
