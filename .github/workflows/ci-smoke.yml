@@ -1,0 +1,39 @@
+name: CI smoke
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[dev]"
+      - run: python -m pytest -q
+      - name: Run smoke experiment
+        run: >-
+          python scripts/run_experiment.py
+          --config configs/smoke.json
+          --workers 1
+          --run-name ci-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Validate smoke results
+        run: >-
+          python scripts/validate_results.py
+          results/smoke/ci-${{ github.run_id }}-${{ github.run_attempt }}
+          --config configs/smoke.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-results-${{ github.sha }}
+          path: results/smoke/ci-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error

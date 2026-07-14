@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "streaming-rl-feature-geometry"
+version = "0.2.0"
+description = "Causal feature-property experiments for non-deep streaming reinforcement learning"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.24,<3",
+  "pandas>=2.0,<4",
+  "matplotlib>=3.7,<4",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7,<10"]
+
+[project.scripts]
+streaming-rl-experiment = "streaming_rl_feature_geometry.experiment:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
