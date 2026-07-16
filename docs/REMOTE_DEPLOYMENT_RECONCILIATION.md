@@ -18,7 +18,7 @@
 - 核心 smoke：4/4，`results/smoke/overnight-extension-regression-20260717`。
 - 跨环境 smoke：20/20，`results/local_validation_20260717/legacy-cross-smoke`。
 - production extension smoke：40/40，`results/local_validation_20260717/extension-smoke`。
-- informative hidden-velocity 有限 pilot：20/20，`results/local_validation_20260717/informative-design-pilot`。
+- informative hidden-velocity 有限 pilot：20 个 per-run summary 已生成，但历史顶层 manifest 因旧版聚合读取空 decision CSV 报 `EmptyDataError`，状态为 `failed`；路径 `results/local_validation_20260717/informative-design-pilot`，失败证据与 mixed 结果均保留。
 - LR tune/eval 与 norm-scaled 有限 smoke 均完成；formal remote full 未在本地运行。
 
 上述结果目录由 `.gitignore` 排除，未混入新的正式远程结果。

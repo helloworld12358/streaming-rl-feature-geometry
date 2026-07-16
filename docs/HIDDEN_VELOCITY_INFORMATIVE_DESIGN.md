@@ -27,6 +27,8 @@
 
 完整的小型 seed 汇总保存在 `docs/pilot_results/hidden_velocity_informative_pilot_summary.csv`。
 
+技术状态必须与科学结果分开记录：20 个 condition × seed run 都生成了单行 `summary.csv`，但该历史批次的顶层 manifest 为 `failed`，旧版聚合在读取空 decision CSV 时触发 `EmptyDataError: No columns to parse from file`。失败 manifest 原样保留，不能把该批次写成 passed；下表来自已完成的 20 个 per-run summary，只作为有限设计证据。
+
 ## Pilot 结果
 
 | condition | mean final reward | mean final stabilization | mean position RMSE | mean velocity decoding R2 | mean control update norm |
@@ -41,3 +43,5 @@ oracle 相对 observation-only 的 final reward gap 在 seeds 200–204 分别�
 ## 选择结论
 
 该候选满足本地 pilot 的预设用途：环境可学习、oracle 在多数独立 design seeds 上优于 observation-only、真实 velocity 可由 oracle 完美取得、普通条件仍无 latent label、扰动和恢复字段可复现且数值有界。因此采用该配置进入正式 profile。此结论不宣称 predictive feature 已取得正结果；正式结论必须等待远端 evaluation seeds 0–19。
+
+上面的机制选择不消除该批次的聚合失败状态；正式 profile 必须重新从 clean commit 运行并通过当前 completeness/manifest 验证，不能复用或伪装这个历史 pilot 目录。
