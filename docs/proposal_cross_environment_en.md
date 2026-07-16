@@ -29,3 +29,7 @@ Prepared remote-only suites use 20 seeds for the main E1-E4 matrix, limited comp
 ## Expected contribution
 
 The contribution is a controlled map from property fulfillment to predictive information and online control—not a claim that one geometry is universally best. Counterexamples where rank, isotropy, unit radius, or moment shaping fail to help are first-class outcomes.
+
+## Production analysis addendum
+
+The confirmatory plan now reports long-tailed seed distributions and preregistered catastrophic failures, separates fixed-alpha from tuning-seed-selected alpha and causal norm-scaled alpha, and adds a minimally modified informative hidden-velocity environment. T-maze and Two-loop interpretations include group-held-out probes at true decision times. These additions diagnose optimization confounding and information availability; they do not authorize post-evaluation tuning or change the linear streaming hypothesis.
