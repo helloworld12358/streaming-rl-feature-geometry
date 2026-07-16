@@ -48,7 +48,7 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 ```
 
-Python >= 3.10 is supported. The Windows local workflow above intentionally keeps its repository-local `.venv`; the remote Linux workflow uses the current active/base Python instead. Dependencies are intentionally limited to NumPy, pandas, Matplotlib, and pytest.
+Python >= 3.10 is supported. Both Windows and remote Linux use a repository-local `.venv`. `pyproject.toml` is the primary dependency definition; `requirements.txt` contains runtime NumPy/pandas/Matplotlib dependencies, and `requirements-dev.txt` adds pytest. There are no external datasets or model weights.
 
 ## 10. Unit tests
 
@@ -79,11 +79,13 @@ The 20-seed full profiles are blocked unless both safeguards are present: `RL_RU
 ## 14. Remote command
 
 ```bash
-export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
-RL_RUN_CONTEXT=remote scripts/run_full_remote.sh --allow-full-run --config configs/full_stationary.json --workers 16 --run-name full-stationary-<COMMIT_SHA>
+RL_RUN_CONTEXT=remote bash scripts/remote_one_click.sh \
+  --allow-full-run \
+  --workers 16 \
+  --run-name full-suite-<COMMIT_SHA>
 ```
 
-The current cloud platform uses Ubuntu 22.04.4, Python 3.10.12 at `/usr/bin/python3`, a 20-CPU cgroup quota, and an 80-GiB memory limit even though 128 logical CPUs and much more host memory are visible. Remote Linux installation uses `python3 -m pip install -e '.[dev]'` in the active/base Python without creating a venv or upgrading pip. Start this environment at 16 workers; 32, 48, or 128 are not suitable defaults. See `docs/CLOUD_PLATFORM_RUNBOOK_ZH.md` and `docs/REMOTE_RUN_GUIDE_ZH.md` before launching full experiments.
+The one-click entry creates `.venv`, installs both requirements files, runs tests and three smoke batches, then launches the guarded CPU suite through tmux or nohup. Parallel units are independent condition × seed tasks; BLAS threads are capped at one. The scripts inspect cgroup CPU limits and refuse unsafe worker counts. GPU inventory is recorded, but no GPU backend is used because the project is small linear NumPy code. See `docs/REMOTE_ONE_CLICK_GUIDE_ZH.md` and `docs/REMOTE_RESOURCE_STRATEGY.md`.
 
 ## 15. Results directories
 
@@ -142,6 +144,7 @@ The four guarded profiles contain exactly 1000, 1500, 1000, and 700 runs. Do not
 ```bash
 export RL_RUN_CONTEXT=remote
 bash scripts/run_cross_extension_remote.sh \
+  --allow-full-run \
   --stage all \
   --run-name cross-extension-$(git rev-parse --short HEAD) \
   --workers 16 \
@@ -149,3 +152,16 @@ bash scripts/run_cross_extension_remote.sh \
 ```
 
 Successful run directories are skipped on resume; failed/incomplete attempts are preserved before retry. The workflow produces stage aggregates, robust plots, Chinese summaries, `analysis_manifest.json`, full and analysis-core tarballs, and verified `.sha256` files. See `docs/CROSS_EXTENSION_REMOTE_RUN_GUIDE_ZH.md` and `docs/HIDDEN_VELOCITY_INFORMATIVE_DESIGN.md`.
+
+## 23. Remote deployment and reproducibility
+
+The canonical Linux entry is `scripts/remote_one_click.sh`. Formal execution always requires both `RL_RUN_CONTEXT=remote` and `--allow-full-run`; local work is limited to tests, smoke, finite pilots, and dry-run. Results are isolated under `results/remote/<run-name>/`, incomplete or failed seeds remain visible, and the final analysis package includes aggregate CSVs, figures, configs, manifests, log summaries, and a SHA-256 file.
+
+- Dependency guide: `docs/DEPENDENCY_GUIDE_ZH.md`
+- One-click tutorial: `docs/REMOTE_ONE_CLICK_GUIDE_ZH.md`
+- Command cheatsheet: `docs/REMOTE_COMMAND_CHEATSHEET_ZH.md`
+- Resource strategy: `docs/REMOTE_RESOURCE_STRATEGY.md`
+- Deployment reconciliation/report: `docs/REMOTE_DEPLOYMENT_RECONCILIATION.md`, `docs/REMOTE_DEPLOYMENT_REPORT.md`
+- Remote plans: `configs/remote_smoke.json`, `configs/remote_full_core.json`, `configs/remote_full_cross_environment.json`, `configs/remote_full_nonstationary.json`, `configs/remote_full_suite.json`
+
+Known deployment limitations: there is no CUDA backend, no automatic cloud scheduler integration, and nohup cannot survive destruction of a cloud container. Use a platform job or `--foreground` when container lifetime is not guaranteed.

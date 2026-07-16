@@ -1,5 +1,7 @@
 # 远程服务器完整运行指南（核心 T-maze）
 
+> 2026-07-17 更新：本文件保留核心单批次历史入口。当前受支持的 clean `.venv` 与一键完整 suite 请使用 `REMOTE_ONE_CLICK_GUIDE_ZH.md`；新指南覆盖下文的 base-Python 安装说明。
+
 本指南只用于远程 Linux 上的核心 full profiles；不要在本地 Windows 执行 full。跨环境批次见 `docs/CROSS_ENV_REMOTE_RUN_GUIDE_ZH.md`，当前云平台的完整复制粘贴手册见 `docs/CLOUD_PLATFORM_RUNBOOK_ZH.md`。
 
 ## 1. 当前环境与硬件结论

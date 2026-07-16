@@ -21,6 +21,7 @@ git rev-parse HEAD
 tmux new -s cross-extension
 export RL_RUN_CONTEXT=remote
 bash scripts/run_cross_extension_remote.sh \
+  --allow-full-run \
   --stage all \
   --run-name cross-extension-$(git rev-parse --short HEAD) \
   --workers 16 \
@@ -98,6 +99,7 @@ grep -rl '"exit_status": "failed"' "$SUITE"/*/runs --include manifest.json | wc 
 ```bash
 export RL_RUN_CONTEXT=remote
 bash scripts/run_cross_extension_remote.sh \
+  --allow-full-run \
   --stage all --run-name "$RUN_NAME" --workers 16 --resume
 ```
 
@@ -105,6 +107,7 @@ bash scripts/run_cross_extension_remote.sh \
 
 ```bash
 bash scripts/run_cross_extension_remote.sh \
+  --allow-full-run \
   --stage all --run-name "$RUN_NAME" --workers 16 --retry-failed
 ```
 
@@ -116,6 +119,7 @@ bash scripts/run_cross_extension_remote.sh \
 
 ```bash
 bash scripts/run_cross_extension_remote.sh \
+  --allow-full-run \
   --stage fixed-full --run-name "$RUN_NAME" --workers 16 --resume
 ```
 
@@ -123,10 +127,12 @@ bash scripts/run_cross_extension_remote.sh \
 
 ```bash
 bash scripts/run_cross_extension_remote.sh \
+  --allow-full-run \
   --stage fixed-full --run-name "$RUN_NAME-hv" --workers 16 --resume \
   --environment hidden_velocity
 
 bash scripts/run_cross_extension_remote.sh \
+  --allow-full-run \
   --stage fixed-full --run-name "$RUN_NAME-hvi" --workers 16 --resume \
   --environment hidden_velocity_informative
 ```
@@ -137,9 +143,11 @@ bash scripts/run_cross_extension_remote.sh \
 
 ```bash
 bash scripts/run_cross_extension_remote.sh \
+  --allow-full-run \
   --stage lr-tune --run-name "$RUN_NAME" --workers 16 --resume
 
 bash scripts/run_cross_extension_remote.sh \
+  --allow-full-run \
   --stage lr-eval --run-name "$RUN_NAME" --workers 16 --resume \
   --selected-learning-rates "$SUITE/lr-tune/selected_learning_rates.csv"
 ```
@@ -148,6 +156,7 @@ bash scripts/run_cross_extension_remote.sh \
 
 ```bash
 bash scripts/run_cross_extension_remote.sh \
+  --allow-full-run \
   --stage all --run-name "$RUN_NAME" --workers 16 --resume --dry-run
 ```
 

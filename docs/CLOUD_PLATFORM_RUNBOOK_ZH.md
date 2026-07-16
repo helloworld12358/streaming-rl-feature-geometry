@@ -1,5 +1,7 @@
 # 云平台一键运行手册（CPU 优先）
 
+> 2026-07-17 更新：本文件保留早期单批次操作记录。当前受支持的一键 `.venv`、requirements、suite、聚合和下载流程以 `REMOTE_ONE_CLICK_GUIDE_ZH.md` 为准；其中的新命令覆盖下文关于直接使用 base Python 的旧说明。
+
 本手册对应仓库 `streaming-rl-feature-geometry` 的现有分支 `codex/cross-environment-representation-priors`。它只提供云端操作命令；本地 Windows 不执行 smoke、pilot、diagnostics 或 remote full。当前 remote full 尚未运行。
 
 ## 1. 已确认的云平台事实

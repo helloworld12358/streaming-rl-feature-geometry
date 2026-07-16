@@ -1,5 +1,7 @@
 # 跨环境 Remote Full 运行指南（Linux / CPU）
 
+> 2026-07-17 更新：本文件保留跨环境单批次历史入口。当前 clean `.venv`、一键 suite、统一聚合和下载流程请使用 `REMOTE_ONE_CLICK_GUIDE_ZH.md`。
+
 本指南只用于远程 Linux。当前 cross-environment full 尚未运行；不得在本地 Windows 伪装 `RL_RUN_CONTEXT=remote` 启动 full。完整的云平台首次部署、离线 wheelhouse、无 tmux 运行和结果下载步骤见 `docs/CLOUD_PLATFORM_RUNBOOK_ZH.md`。
 
 ## 1. 当前云平台事实
