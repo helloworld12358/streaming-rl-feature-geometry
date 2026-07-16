@@ -63,4 +63,6 @@
 
 ## GitHub 状态
 
-主 Goal 分支已通过 GitHub 连接器发布，远端比基线领先 4 commits，且远端树与本地树一致。延后任务将在验证完成后追加逻辑 commit 并发布到同一功能分支。按用户最新要求不创建 PR；不得把“未创建 PR”表述为失败的 push。
+主 Goal 分支已通过 GitHub 连接器发布，远端比基线领先 4 commits，且远端树与本地树一致。因为该远端分支与本地保留了“同树、不同 commit 元数据”的平行历史，延后任务采用附件明确允许的独立分支 `codex/remote-deployment`，避免 non-fast-forward 或 force push。
+
+`codex/remote-deployment` 已通过普通 `git push -u origin codex/remote-deployment` 成功创建并设置 tracking；原 Goal 分支保持不动。按用户最新要求不创建 PR，PR URL 为 N/A。远端仓库仍为 `https://github.com/helloworld12358/streaming-rl-feature-geometry.git`。

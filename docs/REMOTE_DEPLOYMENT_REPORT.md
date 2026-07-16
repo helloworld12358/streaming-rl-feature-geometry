@@ -65,3 +65,7 @@ RL_RUN_CONTEXT=remote bash scripts/remote_one_click.sh \
 ```
 
 完整教程：`docs/REMOTE_ONE_CLICK_GUIDE_ZH.md`。速查：`docs/REMOTE_COMMAND_CHEATSHEET_ZH.md`。
+
+## 发布状态
+
+验证后的部署实现已发布到 `origin/codex/remote-deployment`，使用普通 fast-forward push；没有 force push，没有自动 merge。按用户最新要求没有创建 PR。
