@@ -264,6 +264,11 @@ def _manifest_base(
         "catastrophic_failure": config.get("catastrophic_failure", {}),
         "seed_sets": config.get("seed_sets", {}),
         "selected_learning_rates_sha256": config.get("selected_learning_rates_sha256"),
+        "cpu_count": os.cpu_count(),
+        "cpu_model": os.environ.get("RL_REMOTE_CPU_MODEL", platform.processor() or "unknown"),
+        "gpu_detection": os.environ.get("RL_REMOTE_GPU_DETECTION", "not-recorded"),
+        "gpu_backend_used": "none",
+        "parallelism": "cpu-process",
     }
 
 
@@ -860,6 +865,7 @@ def run_cross_one(task: tuple[Any, ...]) -> dict[str, Any]:
     manifest.update(
         start_time=datetime.now(timezone.utc).isoformat(),
         exit_status="running",
+        result_path=str(run_dir.resolve()),
         bank=env_spec.get("bank", "mixed"),
         horizon=config["horizons"],
         interaction_budget=env_spec["interactions"],

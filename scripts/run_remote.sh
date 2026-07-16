@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Backward-compatible wrapper retained from PR #1. New automation should call
-# bootstrap_remote.sh and run_full_remote.sh directly.
+# bootstrap_remote.sh and run_remote_full.sh directly.
 PROFILE="${1:-}"
 RUN_NAME="${2:-}"
 WORKERS="${WORKERS:-4}"
@@ -17,7 +17,7 @@ if [[ -z "$RUN_NAME" || "$ALLOW" != "--allow-full-run" ]]; then
   exit 2
 fi
 
-exec scripts/run_full_remote.sh \
+exec scripts/run_remote_full.sh \
   --allow-full-run \
   --config "configs/${PROFILE}.json" \
   --workers "$WORKERS" \

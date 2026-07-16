@@ -8,6 +8,8 @@ RESUME=0
 RETRY_FAILED=0
 DRY_RUN=0
 SELECTED=""
+OUTPUT_ROOT="results/cross_extension"
+ALLOW_FULL=0
 ENVIRONMENTS=()
 CONDITIONS=()
 
@@ -15,7 +17,8 @@ usage() {
   cat <<'EOF'
 Usage: RL_RUN_CONTEXT=remote bash scripts/run_cross_extension_remote.sh \
   --stage fixed-full|lr-tune|lr-eval|norm-scaled|all \
-  --run-name NAME [--workers N] [--resume] [--retry-failed] [--dry-run] \
+  --allow-full-run --run-name NAME [--workers N] [--output-root DIR] \
+  [--resume] [--retry-failed] [--dry-run] \
   [--environment ID] [--condition NAME] [--selected-learning-rates PATH]
 EOF
 }
@@ -31,6 +34,8 @@ while [[ $# -gt 0 ]]; do
     --environment) ENVIRONMENTS+=("$2"); shift 2 ;;
     --condition) CONDITIONS+=("$2"); shift 2 ;;
     --selected-learning-rates) SELECTED="$2"; shift 2 ;;
+    --output-root) OUTPUT_ROOT="$2"; shift 2 ;;
+    --allow-full-run) ALLOW_FULL=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -48,6 +53,14 @@ if ! [[ "$WORKERS" =~ ^[1-9][0-9]*$ ]]; then
   echo "--workers must be a positive integer" >&2
   exit 2
 fi
+if [[ "${RL_RUN_CONTEXT:-}" != "remote" ]]; then
+  echo "RL_RUN_CONTEXT=remote is required for production full execution and dry-run." >&2
+  exit 2
+fi
+if [[ "$ALLOW_FULL" -ne 1 ]]; then
+  echo "--allow-full-run is required for production full execution and dry-run." >&2
+  exit 2
+fi
 
 cd "$(dirname "$0")/.."
 PYTHON_BIN="${PYTHON_BIN:-python3}"
@@ -63,10 +76,6 @@ if [[ -n "$(git status --porcelain)" ]]; then
     echo "Refusing production run from a dirty worktree. Preserve or commit changes first." >&2
     exit 2
   fi
-fi
-if [[ "$DRY_RUN" -ne 1 && "${RL_RUN_CONTEXT:-}" != "remote" ]]; then
-  echo "RL_RUN_CONTEXT=remote is required for production execution." >&2
-  exit 2
 fi
 command -v git >/dev/null
 command -v "$PYTHON_BIN" >/dev/null
@@ -100,7 +109,7 @@ export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-1}"
 export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
 export NUMEXPR_NUM_THREADS="${NUMEXPR_NUM_THREADS:-1}"
 
-SUITE_DIR="results/cross_extension/$RUN_NAME"
+SUITE_DIR="$OUTPUT_ROOT/$RUN_NAME"
 SELECTED_DEFAULT="$SUITE_DIR/lr-tune/selected_learning_rates.csv"
 [[ -z "$SELECTED" ]] && SELECTED="$SELECTED_DEFAULT"
 

@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "profile": "remote_full_cross_environment",
+  "remote_full": true,
+  "environments": ["tmaze", "ringworld", "two_loop", "hidden_velocity"],
+  "representations": ["observation_only", "oracle", "raw", "rms_raw", "standardized", "whitened", "gaussian_moment", "unit_sphere", "sparse", "matched"],
+  "banks": ["mixed", "compact"],
+  "horizons": [0.65, 0.9],
+  "seeds": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+  "interactions": {"tmaze": 200000, "ringworld": 200000, "two_loop": 220000, "hidden_velocity": 260000},
+  "workers": 16,
+  "output_root": "results/remote",
+  "logging_frequency": 200,
+  "aggregation_expectations": {
+    "expected_runs": 1040,
+    "require_all_seeds": true,
+    "require_finite_summaries": true,
+    "require_manifests": true,
+    "require_figures": true
+  },
+  "runs": [
+    {"id": "cross-main", "kind": "cross", "config": "configs/cross_full.json"},
+    {"id": "cross-compact-bank", "kind": "cross", "config": "configs/cross_full_compact.json"},
+    {"id": "cross-short-horizon", "kind": "cross", "config": "configs/cross_full_short_horizon.json"}
+  ]
+}

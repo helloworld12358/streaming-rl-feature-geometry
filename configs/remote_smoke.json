@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "profile": "remote_smoke",
+  "remote_full": false,
+  "environments": ["tmaze", "ringworld", "two_loop", "hidden_velocity", "hidden_velocity_informative"],
+  "representations": ["observation_only", "oracle", "raw", "whitened"],
+  "banks": ["mixed", "compact"],
+  "horizons": [0.6, 0.65, 0.9],
+  "seeds": [0, 9000, 9001],
+  "interactions": {"core": 3000, "cross": "3000-5000", "extension": "480-600"},
+  "workers": 2,
+  "output_root": "results/remote_smoke",
+  "logging_frequency": {"core_metrics_stride": 20, "cross_metrics_stride": 25},
+  "aggregation_expectations": {
+    "required_batches": 3,
+    "require_all_seeds": true,
+    "require_finite_summaries": true,
+    "require_manifests": true,
+    "require_figures": true
+  },
+  "runs": [
+    {"id": "core-smoke", "kind": "core", "config": "configs/smoke.json"},
+    {"id": "cross-smoke", "kind": "cross", "config": "configs/cross_smoke.json"},
+    {"id": "extension-smoke", "kind": "cross", "config": "configs/cross_extension_smoke.json"}
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "profile": "remote_full_core",
+  "remote_full": true,
+  "environments": ["tmaze"],
+  "representations": ["observation_only", "oracle", "trace_only", "raw", "rms_raw", "standardized", "decorrelated", "whitened", "gaussian_moment", "unit_sphere"],
+  "banks": ["mixed"],
+  "horizons": [0.6, 0.9],
+  "seeds": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+  "interactions": 200000,
+  "workers": 16,
+  "output_root": "results/remote",
+  "logging_frequency": 200,
+  "aggregation_expectations": {
+    "expected_runs": 360,
+    "require_all_seeds": true,
+    "require_finite_summaries": true,
+    "require_manifests": true,
+    "require_figures": true
+  },
+  "runs": [
+    {"id": "core-stationary", "kind": "core", "config": "configs/full_stationary.json"},
+    {"id": "core-cue-only", "kind": "core", "config": "configs/full_cue_only.json"},
+    {"id": "core-short-horizon", "kind": "core", "config": "configs/full_short_horizon.json"}
+  ]
+}

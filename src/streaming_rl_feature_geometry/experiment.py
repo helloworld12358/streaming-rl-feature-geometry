@@ -172,6 +172,14 @@ def _manifest_base(
         "operating_system": platform.platform(),
         "hostname": socket.gethostname(),
         "config_hash": config_hash(config),
+        "predictive_bank": config.get("gvf_bank", "mixed"),
+        "horizons": list(config.get("horizons", [])),
+        "interaction_budget": int(config["total_interactions"]),
+        "cpu_count": os.cpu_count(),
+        "cpu_model": os.environ.get("RL_REMOTE_CPU_MODEL", platform.processor() or "unknown"),
+        "gpu_detection": os.environ.get("RL_REMOTE_GPU_DETECTION", "not-recorded"),
+        "gpu_backend_used": "none",
+        "parallelism": "cpu-process",
     }
 
 
@@ -195,6 +203,7 @@ def run_one(task: tuple[dict[str, Any], str, int, str]) -> dict[str, Any]:
         {
             "start_time": datetime.now(timezone.utc).isoformat(),
             "exit_status": "running",
+            "result_path": str(run_dir.resolve()),
         }
     )
     write_json(run_dir / "manifest.json", manifest)

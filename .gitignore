@@ -3,6 +3,8 @@ __pycache__/
 *.pyc
 *.egg-info/
 .venv/
+wheelhouse/
+.wheelhouse/
 .coverage
 htmlcov/
 .mypy_cache/
