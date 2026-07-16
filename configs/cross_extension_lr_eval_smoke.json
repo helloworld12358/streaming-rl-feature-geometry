@@ -1,0 +1,13 @@
+{
+  "profile": "cross_extension_lr_eval_smoke",
+  "experiment_stage": "lr_eval", "controller_alpha_mode": "fixed",
+  "seeds": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+  "seed_sets": {"pilot": [200, 201, 202, 203, 204], "tuning": [100, 101, 102, 103, 104], "evaluation": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19], "smoke": [9000, 9001]},
+  "environments": {"hidden_velocity_informative": {"interactions": 120, "conditions": ["raw"], "bank": "compact", "kwargs": {"rho": 0.97, "disturbance_interval_min": 40, "disturbance_interval_max": 50}, "control_alpha": 0.002, "gamma": 0.95}},
+  "horizons": [0.65], "trace_dim": 4, "predictive_alpha": 0.006, "control_alpha": 0.006,
+  "gamma": 0.98, "lambda": 0.8, "epsilon": 0.05,
+  "transform_eps": 0.001, "transform_min_samples": 16, "cov_update_every": 10,
+  "metrics_stride": 10, "analysis_burn_in": 16, "reservoir_size": 96,
+  "moving_window": 16, "final_window": 32, "workers": 2, "robust_bootstrap_samples": 50,
+  "output_dir": "results/cross_extension_lr_eval_smoke"
+}
