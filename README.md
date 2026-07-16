@@ -10,7 +10,7 @@ Do prescribed statistical and geometric properties of a fixed predictive state i
 
 ## 3. Environment
 
-`ContinuingTMaze` is a continuing T-maze with cue, delayed echo, corridor, junction, and one-step outcome phases. The left/right cue is unavailable at the junction. After the outcome, the environment enters the next trial rather than remaining terminal. The cross-environment extension adds an aliased Ringworld, an identity-by-phase two-loop task, and bounded hidden-velocity control through one common continuing interface. The remote non-stationary profiles apply one E1 corridor-length change from 5 to 9 at interaction 150,000.
+`ContinuingTMaze` is a continuing T-maze with cue, delayed echo, corridor, junction, and one-step outcome phases. The left/right cue is unavailable at the junction. After the outcome, the environment enters the next trial rather than remaining terminal. The cross-environment extension adds an aliased Ringworld, an identity-by-phase two-loop task, bounded hidden-velocity control, and an independently registered informative hidden-velocity variant with sparse bounded impulse disturbances. Both velocity environments keep velocity out of the ordinary observation. The remote non-stationary profiles apply one E1 corridor-length change from 5 to 9 at interaction 150,000.
 
 ## 4. Streaming definition
 
@@ -39,7 +39,7 @@ The fixed mixed bank has ten semantic GVFs: observation/echo, junction, positive
 
 ## 8. Metrics
 
-The runner records trial accuracy, cumulative reward, time to threshold, GVF TD errors, update and parameter norms, non-finite counts, cue decodability by position, cue separation, covariance eigenvalues, effective rank, isotropy, condition number, correlation, skewness, kurtosis, transform drift, and non-stationary adaptation where applicable. Figures show mean and standard error with sample count.
+The runner records trial accuracy, cumulative reward, time to threshold, GVF TD errors, update and parameter norms, non-finite counts, full-stream and true-decision held-out probes, covariance eigenvalues, effective rank, isotropy, condition number, correlation, skewness, kurtosis, transform drift, and non-stationary adaptation where applicable. Hidden velocity additionally logs the environment-authored position/velocity/action cost decomposition on every step, RMSE, stabilization, boundary, disturbance, settling, and recovery metrics. Condition summaries include median, IQM, bootstrap intervals, quantiles, extrema, and configured catastrophic-failure rates rather than relying only on mean ± SEM.
 
 ## 9. Local installation
 
@@ -132,3 +132,20 @@ Four environment-specific `cross_full_<environment>.json` configs and the select
 - `docs/CROSS_ENV_RESULTS.md`
 - `docs/proposal_cross_environment_en.md`
 - `docs/proposal_cross_environment_zh.md`
+
+## 22. Production cross extension
+
+The production extension separates fixed-alpha, condition-specific tuning/tuned evaluation, and causal norm-scaled alpha modes. Fixed mode preserves the original SARSA update. Tuning uses seeds 100–104 and the fixed multiplier grid `base × [0.125, 0.25, 0.5, 1, 2, 4]`; evaluation uses seeds 0–19 and only consumes the generated `selected_learning_rates.csv`. Design seeds 200–204 and smoke seeds 9000–9001 remain disjoint.
+
+The four guarded profiles contain exactly 1000, 1500, 1000, and 700 runs. Do not run them locally. On the remote CPU environment, the default end-to-end entry point is:
+
+```bash
+export RL_RUN_CONTEXT=remote
+bash scripts/run_cross_extension_remote.sh \
+  --stage all \
+  --run-name cross-extension-$(git rev-parse --short HEAD) \
+  --workers 16 \
+  --resume
+```
+
+Successful run directories are skipped on resume; failed/incomplete attempts are preserved before retry. The workflow produces stage aggregates, robust plots, Chinese summaries, `analysis_manifest.json`, full and analysis-core tarballs, and verified `.sha256` files. See `docs/CROSS_EXTENSION_REMOTE_RUN_GUIDE_ZH.md` and `docs/HIDDEN_VELOCITY_INFORMATIVE_DESIGN.md`.

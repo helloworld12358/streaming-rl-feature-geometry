@@ -25,3 +25,7 @@
 ## 预期贡献
 
 目标不是宣称某一种几何普遍最优，而是建立“性质是否真正满足—任务信息是否保留—在线控制是否改善”的可审计关系。负结果、null result 与反例均是正式贡献。
+
+## 生产分析补充
+
+确认性计划新增长尾 seed 分布与预注册 catastrophic failure，明确区分 fixed-alpha、仅由 tuning seeds 选择的 tuned-alpha 和因果 norm-scaled alpha，并加入最小修改的 informative hidden-velocity 环境。T-maze 与 Two-loop 的解释同时报告真实决策时刻、按 group held-out 的 probe。这些分析用于区分 representation 与 optimization 混杂，不允许在看到 evaluation seeds 后调参，也不改变线性严格 streaming 的研究问题。

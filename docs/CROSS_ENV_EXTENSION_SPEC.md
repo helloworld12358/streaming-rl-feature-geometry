@@ -1254,3 +1254,7 @@ At completion report:
 Do not claim unexecuted remote results.
 
 Start by reading this file in full, creating the reconciliation document, and then continue actual implementation until the definition of done is satisfied or an external blocker is reached.
+
+## Production extension addendum
+
+The later production addendum registers `hidden_velocity_informative` without changing the original four environments, adds environment-authored hidden-velocity cost diagnostics, true-decision grouped probes, robust/failure aggregation, and three explicitly separated controller-alpha analyses (`fixed`, tuned evaluation, and causal `norm_scaled`). Formal profiles use disjoint design 200–204, tuning 100–104, evaluation 0–19, and smoke 9000–9001 seeds. Exact executable configs and completion rules are documented in `CROSS_EXTENSION_REMOTE_RUN_GUIDE_ZH.md`; they supersede no core causal/isolation constraint in this specification.

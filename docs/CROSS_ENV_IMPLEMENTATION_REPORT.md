@@ -53,3 +53,7 @@ Both the Python runner and Linux launcher require `RL_RUN_CONTEXT=remote` and `-
 - Remote full experiments: prepared but not run.
 
 The result interpretation, including negative and failed findings, is in `docs/CROSS_ENV_RESULTS.md`.
+
+## Production follow-up
+
+The follow-up adds a fifth independently registered informative hidden-velocity environment, exact per-step cost decomposition, robust seed summaries, config-fixed catastrophic failures, condition-specific alpha selection, causal norm-scaled alpha, and true-decision probes. Four guarded profiles contain 1000/1500/1000/700 runs and remain unexecuted locally. The local informative design pilot used seeds 200–204 and retained mixed predictive results; details are in `HIDDEN_VELOCITY_INFORMATIVE_DESIGN.md`. Production resume/retry, aggregation, reporting, full/analysis-core packaging, and SHA workflows are in `CROSS_EXTENSION_REMOTE_RUN_GUIDE_ZH.md`.
