@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from dataclasses import dataclass, field
+from typing import Any, Mapping, Protocol, runtime_checkable
 
 import numpy as np
 
 from .env import ContinuingTMaze
-from .hidden_velocity import HiddenVelocity
+from .hidden_velocity import HiddenVelocity, HiddenVelocityInformative
 from .ringworld import AliasedRingworld
 from .two_loop import AliasedTwoLoop
 
@@ -27,6 +27,7 @@ class CrossStepInfo:
     latent: tuple[float, ...]
     events: tuple[float, ...]
     stabilized: bool | None = None
+    diagnostics: Mapping[str, Any] = field(default_factory=dict)
 
 
 @runtime_checkable
@@ -117,7 +118,13 @@ class TMazeAdapter:
         return next_obs, float(reward), common
 
 
-ENVIRONMENT_IDS = ("tmaze", "ringworld", "two_loop", "hidden_velocity")
+ENVIRONMENT_IDS = (
+    "tmaze",
+    "ringworld",
+    "two_loop",
+    "hidden_velocity",
+    "hidden_velocity_informative",
+)
 
 
 def make_environment(env_id: str, seed: int = 0, **kwargs: object) -> StreamingEnvironment:
@@ -131,4 +138,6 @@ def make_environment(env_id: str, seed: int = 0, **kwargs: object) -> StreamingE
         return AliasedTwoLoop(seed=seed, **kwargs)
     if env_id == "hidden_velocity":
         return HiddenVelocity(seed=seed, **kwargs)
+    if env_id == "hidden_velocity_informative":
+        return HiddenVelocityInformative(seed=seed, **kwargs)
     raise ValueError(f"unknown environment {env_id!r}; expected one of {ENVIRONMENT_IDS}")

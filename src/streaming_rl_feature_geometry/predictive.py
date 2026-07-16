@@ -12,6 +12,7 @@ COMPACT_EVENTS = {
     "ringworld": ("landmark_a", "landmark_b", "decision"),
     "two_loop": ("identity_cue_0", "identity_cue_1", "landmark", "decision"),
     "hidden_velocity": ("position_left", "position_right", "near_center"),
+    "hidden_velocity_informative": ("position_left", "position_right", "near_center"),
 }
 
 

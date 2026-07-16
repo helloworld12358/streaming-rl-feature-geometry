@@ -12,6 +12,7 @@ MATCHED_PRIOR_FOR_ENV = {
     "ringworld": "circular",
     "two_loop": "block",
     "hidden_velocity": "anisotropic",
+    "hidden_velocity_informative": "anisotropic",
 }
 
 

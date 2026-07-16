@@ -26,7 +26,21 @@ PALETTE = {
     "bounded": "#aec7e8",
     "matched": "#111111",
 }
-ENVIRONMENTS = ("tmaze", "ringworld", "two_loop", "hidden_velocity")
+ENVIRONMENTS = (
+    "tmaze",
+    "ringworld",
+    "two_loop",
+    "hidden_velocity",
+    "hidden_velocity_informative",
+)
+
+
+def _environment_axes(figsize: tuple[float, float] = (15, 8)):
+    fig, axes = plt.subplots(2, 3, figsize=figsize, sharex=False)
+    axes = axes.ravel()
+    for ax in axes[len(ENVIRONMENTS) :]:
+        ax.set_visible(False)
+    return fig, axes
 
 
 def _finish(
@@ -47,8 +61,8 @@ def _mean_sem(frame: pd.DataFrame, by: list[str], value: str) -> pd.DataFrame:
 
 
 def _faceted_learning_curves(steps: pd.DataFrame, figures: Path) -> None:
-    fig, axes = plt.subplots(2, 2, figsize=(13, 8), sharex=False)
-    for ax, environment in zip(axes.ravel(), ENVIRONMENTS):
+    fig, axes = _environment_axes()
+    for ax, environment in zip(axes, ENVIRONMENTS):
         subset = steps[steps.environment == environment]
         grouped = _mean_sem(subset, ["condition", "t"], "moving_performance")
         for condition, values in grouped.groupby("condition", sort=False):
@@ -62,9 +76,9 @@ def _faceted_learning_curves(steps: pd.DataFrame, figures: Path) -> None:
             )
         ax.set_title(environment)
         ax.set_xlabel("Interaction")
-        ax.set_ylabel("Moving accuracy" if environment != "hidden_velocity" else "Moving reward")
+        ax.set_ylabel("Moving reward" if environment.startswith("hidden_velocity") else "Moving accuracy")
         ax.grid(alpha=0.25)
-    handles, labels = axes[0, 0].get_legend_handles_labels()
+    handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(
         handles, labels, loc="lower center", bbox_to_anchor=(0.5, -0.02),
         ncol=min(6, max(1, len(labels))),
@@ -78,8 +92,8 @@ def _faceted_learning_curves(steps: pd.DataFrame, figures: Path) -> None:
 
 
 def _faceted_bars(summary: pd.DataFrame, figures: Path, conditions: set[str] | None, name: str) -> None:
-    fig, axes = plt.subplots(2, 2, figsize=(13, 8))
-    for ax, environment in zip(axes.ravel(), ENVIRONMENTS):
+    fig, axes = _environment_axes()
+    for ax, environment in zip(axes, ENVIRONMENTS):
         subset = summary[summary.environment == environment]
         if conditions is not None:
             subset = subset[subset.condition.isin(conditions)]
@@ -96,7 +110,7 @@ def _faceted_bars(summary: pd.DataFrame, figures: Path, conditions: set[str] | N
         )
         ax.set_xticks(x, grouped.condition, rotation=40, ha="right")
         ax.set_title(f"{environment} (n={int(grouped['count'].max()) if len(grouped) else 0} seeds)")
-        ax.set_ylabel("Final accuracy" if environment != "hidden_velocity" else "Final reward")
+        ax.set_ylabel("Final reward" if environment.startswith("hidden_velocity") else "Final accuracy")
         ax.grid(axis="y", alpha=0.25)
     title = "Task-matched prior versus generic priors" if conditions else "Final performance by representation and environment"
     fig.suptitle(title, y=1.02)
@@ -104,8 +118,8 @@ def _faceted_bars(summary: pd.DataFrame, figures: Path, conditions: set[str] | N
 
 
 def _scatter_by_metric(joined: pd.DataFrame, metric: str, path: Path, xlabel: str) -> None:
-    fig, axes = plt.subplots(2, 2, figsize=(12, 8))
-    for ax, environment in zip(axes.ravel(), ENVIRONMENTS):
+    fig, axes = _environment_axes()
+    for ax, environment in zip(axes, ENVIRONMENTS):
         subset = joined[joined.environment == environment]
         for condition, values in subset.groupby("condition", sort=False):
             ax.scatter(
@@ -119,7 +133,7 @@ def _scatter_by_metric(joined: pd.DataFrame, metric: str, path: Path, xlabel: st
         ax.set_xlabel(xlabel)
         ax.set_ylabel("Final performance")
         ax.grid(alpha=0.25)
-    handles, labels = axes[0, 0].get_legend_handles_labels()
+    handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(
         handles, labels, loc="lower center", bbox_to_anchor=(0.5, -0.02),
         ncol=min(6, max(1, len(labels))),
@@ -157,8 +171,8 @@ def _moment_relationship(joined: pd.DataFrame, figures: Path) -> None:
 
 def _update_stability(updates: pd.DataFrame, figures: Path) -> None:
     grouped = _mean_sem(updates, ["environment", "condition"], "control_update_norm")
-    fig, axes = plt.subplots(2, 2, figsize=(13, 8))
-    for ax, environment in zip(axes.ravel(), ENVIRONMENTS):
+    fig, axes = _environment_axes()
+    for ax, environment in zip(axes, ENVIRONMENTS):
         values = grouped[grouped.environment == environment]
         x = np.arange(len(values))
         ax.bar(x, values["mean"], yerr=values["sem"], capsize=3, color="#4c78a8")
@@ -172,8 +186,8 @@ def _update_stability(updates: pd.DataFrame, figures: Path) -> None:
 
 def _eigen_spectra(representation: pd.DataFrame, figures: Path) -> None:
     columns = sorted(column for column in representation if column.startswith("eigenvalue_"))
-    fig, axes = plt.subplots(2, 2, figsize=(12, 8))
-    for ax, environment in zip(axes.ravel(), ENVIRONMENTS):
+    fig, axes = _environment_axes()
+    for ax, environment in zip(axes, ENVIRONMENTS):
         subset = representation[representation.environment == environment]
         for condition, values in subset.groupby("condition", sort=False):
             spectrum = values[columns].mean().dropna().to_numpy(dtype=float)
@@ -188,7 +202,7 @@ def _eigen_spectra(representation: pd.DataFrame, figures: Path) -> None:
         ax.set_xlabel("Eigenvalue rank")
         ax.set_ylabel("Covariance eigenvalue")
         ax.grid(alpha=0.25)
-    handles, labels = axes[0, 0].get_legend_handles_labels()
+    handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(
         handles, labels, loc="lower center", bbox_to_anchor=(0.5, -0.02),
         ncol=min(6, max(1, len(labels))),
@@ -228,7 +242,7 @@ def _pca(features: np.ndarray) -> np.ndarray:
 
 
 def _load_matched(root: Path, environment: str) -> dict[str, np.ndarray] | None:
-    paths = sorted((root / "runs" / environment / "matched").glob("seed_*/diagnostic_samples.npz"))
+    paths = sorted((root / "runs" / environment / "matched").rglob("diagnostic_samples.npz"))
     if not paths:
         return None
     with np.load(paths[0]) as archive:
@@ -237,8 +251,8 @@ def _load_matched(root: Path, environment: str) -> dict[str, np.ndarray] | None:
 
 def _environment_geometry(root: Path, figures: Path) -> None:
     payloads = {environment: _load_matched(root, environment) for environment in ENVIRONMENTS}
-    fig, axes = plt.subplots(2, 2, figsize=(11, 9))
-    for ax, environment in zip(axes.ravel(), ENVIRONMENTS):
+    fig, axes = _environment_axes((15, 9))
+    for ax, environment in zip(axes, ENVIRONMENTS):
         payload = payloads[environment]
         if payload is None or not len(payload["features"]):
             ax.set_visible(False)
@@ -343,6 +357,222 @@ def _nonstationary_adaptation(steps: pd.DataFrame, figures: Path) -> None:
     _finish(fig, figures / "remote_nonstationary_adaptation.png")
 
 
+def _condition_boxplot(
+    frame: pd.DataFrame, metric: str, figures: Path, filename: str, title: str
+) -> None:
+    usable = frame.dropna(subset=[metric]) if metric in frame else pd.DataFrame()
+    if usable.empty:
+        return
+    labels = list(dict.fromkeys(usable["condition"]))
+    values = [usable.loc[usable.condition == label, metric].to_numpy() for label in labels]
+    fig, ax = plt.subplots(figsize=(max(9, 0.8 * len(labels)), 5.5))
+    ax.boxplot(values, tick_labels=labels, showfliers=True)
+    for index, data in enumerate(values, start=1):
+        jitter = np.linspace(-0.12, 0.12, len(data)) if len(data) else np.empty(0)
+        ax.scatter(index + jitter, data, s=18, alpha=0.65, color="#1f77b4")
+    ax.set_title(title)
+    ax.set_ylabel(metric.replace("_", " "))
+    ax.tick_params(axis="x", rotation=40)
+    ax.grid(axis="y", alpha=0.25)
+    _finish(fig, figures / filename)
+
+
+def _hidden_velocity_figures(
+    summaries: pd.DataFrame, task: pd.DataFrame, figures: Path
+) -> None:
+    hidden = summaries[summaries.environment.isin({"hidden_velocity", "hidden_velocity_informative"})]
+    if hidden.empty:
+        return
+    _condition_boxplot(
+        hidden, "final_window_reward", figures, "hidden_velocity_final_reward_distribution.png",
+        "Hidden velocity final reward distribution",
+    )
+    _condition_boxplot(
+        hidden, "final_window_stabilization_rate", figures,
+        "hidden_velocity_stabilization_distribution.png",
+        "Hidden velocity final-window stabilization rate",
+    )
+    _condition_boxplot(
+        hidden, "final_window_position_rmse", figures, "hidden_velocity_position_rmse.png",
+        "Hidden velocity final-window position RMSE",
+    )
+    _condition_boxplot(
+        hidden, "final_window_velocity_rmse", figures, "hidden_velocity_velocity_rmse.png",
+        "Hidden velocity final-window velocity RMSE",
+    )
+    _condition_boxplot(
+        hidden, "final_window_control_effort", figures, "hidden_velocity_control_effort.png",
+        "Hidden velocity final-window control effort",
+    )
+    cost_columns = [
+        "final_window_position_cost",
+        "final_window_velocity_cost",
+        "final_window_action_cost",
+    ]
+    if set(cost_columns) <= set(hidden):
+        cost = hidden.groupby("condition", sort=False)[cost_columns].median()
+        fig, ax = plt.subplots(figsize=(12, 5.5))
+        cost.plot(kind="bar", ax=ax)
+        ax.set(title="Hidden velocity median cost decomposition", ylabel="Cost per step")
+        ax.grid(axis="y", alpha=0.25)
+        _finish(fig, figures / "hidden_velocity_cost_components.png")
+    robust_rows = []
+    for condition, frame in hidden.groupby("condition", sort=False):
+        values = frame["final_window_reward"].dropna().to_numpy()
+        if len(values):
+            from .robust_stats import interquartile_mean
+
+            robust_rows.append(
+                (condition, np.median(values), interquartile_mean(values), np.quantile(values, 0.1))
+            )
+    if robust_rows:
+        robust = pd.DataFrame(robust_rows, columns=["condition", "median", "IQM", "q10"])
+        robust.set_index("condition").plot(kind="bar", figsize=(12, 5.5))
+        fig = plt.gcf()
+        ax = plt.gca()
+        ax.set(title="Robust final-reward summaries", ylabel="Final-window reward")
+        ax.grid(axis="y", alpha=0.25)
+        _finish(fig, figures / "hidden_velocity_robust_reward_summary.png")
+    if "catastrophic_failure" in hidden:
+        failure = hidden.groupby("condition", sort=False)["catastrophic_failure"].mean()
+        fig, ax = plt.subplots(figsize=(11, 5))
+        failure.plot(kind="bar", ax=ax, color="#d62728")
+        ax.set(title="Catastrophic failure rate", ylabel="Failure rate", ylim=(0, 1))
+        ax.grid(axis="y", alpha=0.25)
+        _finish(fig, figures / "hidden_velocity_catastrophic_failure_rate.png")
+    baselines = hidden[
+        hidden.condition.isin({"observation_only", "oracle", "raw", "whitened", "matched"})
+    ]
+    _condition_boxplot(
+        baselines, "final_window_reward", figures, "hidden_velocity_baseline_comparison.png",
+        "Oracle, observation-only, and predictive conditions",
+    )
+    join_keys = ["environment", "condition", "seed"]
+    joined = hidden.merge(task, on=join_keys, suffixes=("", "_task"))
+    if "velocity_decoding_r2" in joined:
+        fig, ax = plt.subplots(figsize=(7, 5.5))
+        ax.scatter(joined.velocity_decoding_r2, joined.final_window_reward, alpha=0.7)
+        ax.set(xlabel="Velocity decoding R2", ylabel="Final-window reward",
+               title="Velocity decoding versus control")
+        ax.grid(alpha=0.25)
+        _finish(fig, figures / "hidden_velocity_reward_vs_velocity_decoding.png")
+    if "mean_control_update_norm" in hidden:
+        fig, ax = plt.subplots(figsize=(7, 5.5))
+        ax.scatter(hidden.mean_control_update_norm, hidden.final_window_reward, alpha=0.7)
+        ax.set(xlabel="Mean control update norm", ylabel="Final-window reward",
+               title="Control update norm versus reward")
+        ax.grid(alpha=0.25)
+        _finish(fig, figures / "hidden_velocity_reward_vs_update_norm.png")
+    fig, ax = plt.subplots(figsize=(8, 5.5))
+    for condition, frame in hidden.groupby("condition", sort=False):
+        values = np.sort(frame["final_window_reward"].dropna().to_numpy())
+        if len(values):
+            ax.step(values, np.arange(1, len(values) + 1) / len(values), where="post", label=condition)
+    ax.set(title="Seed-level final reward ECDF", xlabel="Final-window reward", ylabel="ECDF")
+    ax.grid(alpha=0.25)
+    ax.legend(ncol=2, fontsize=8)
+    _finish(fig, figures / "hidden_velocity_seed_ecdf.png")
+
+
+def _decision_probe_figures(root: Path, summaries: pd.DataFrame, task: pd.DataFrame, figures: Path) -> None:
+    by_position_path = root / "aggregate_decision_probe_by_position.csv"
+    if by_position_path.exists() and by_position_path.stat().st_size > 1:
+        try:
+            by_position = pd.read_csv(by_position_path)
+        except pd.errors.EmptyDataError:
+            by_position = pd.DataFrame()
+        if len(by_position) and "cue_decodability" in by_position:
+            grouped = by_position.groupby(["condition", "corridor_position"], sort=False)[
+                "cue_decodability"
+            ].mean().reset_index()
+            fig, ax = plt.subplots(figsize=(9, 5.5))
+            for condition, frame in grouped.groupby("condition", sort=False):
+                ax.plot(frame.corridor_position, frame.cue_decodability, marker="o", label=condition)
+            ax.set(title="T-maze cue information along the corridor", xlabel="Corridor position",
+                   ylabel="Held-out cue decodability")
+            ax.grid(alpha=0.25)
+            ax.legend(ncol=2, fontsize=8)
+            _finish(fig, figures / "tmaze_decodability_by_corridor_position.png")
+    specifications = [
+        ("tmaze", "cue_decodability", "cue_decodability_at_decision", "tmaze_full_vs_decision_probe.png"),
+        ("two_loop", "identity_decodability", "identity_decodability_at_decision", "two_loop_identity_full_vs_decision.png"),
+        ("two_loop", "phase_r2", "phase_r2_at_decision", "two_loop_phase_full_vs_decision.png"),
+    ]
+    for environment, full_metric, decision_metric, filename in specifications:
+        if full_metric not in task or decision_metric not in task:
+            continue
+        frame = task[task.environment == environment].dropna(subset=[full_metric, decision_metric])
+        if frame.empty:
+            continue
+        fig, ax = plt.subplots(figsize=(7, 5.5))
+        ax.scatter(frame[full_metric], frame[decision_metric], alpha=0.7)
+        ax.set(title=f"{environment}: full-stream versus decision-time probe",
+               xlabel=full_metric, ylabel=decision_metric)
+        ax.grid(alpha=0.25)
+        _finish(fig, figures / filename)
+    joined = summaries.merge(task, on=["environment", "condition", "seed"], suffixes=("", "_task"))
+    metric = np.where(
+        joined.environment == "tmaze",
+        joined.get("cue_decodability_at_decision", np.nan),
+        joined.get("identity_decodability_at_decision", np.nan),
+    )
+    valid = np.isfinite(metric)
+    if valid.any():
+        fig, ax = plt.subplots(figsize=(7, 5.5))
+        ax.scatter(np.asarray(metric)[valid], joined.loc[valid, "final_performance"], alpha=0.7)
+        ax.set(title="Decision-time decodability versus final performance",
+               xlabel="Decision-time decodability", ylabel="Final performance")
+        ax.grid(alpha=0.25)
+        _finish(fig, figures / "decision_decodability_vs_performance.png")
+    if "decision_probe_sample_count" in task:
+        _condition_boxplot(
+            task, "decision_probe_sample_count", figures, "decision_probe_sample_count.png",
+            "Decision-conditioned probe sample counts",
+        )
+
+
+def _alpha_tuning_figures(root: Path, summaries: pd.DataFrame, figures: Path) -> None:
+    """Plot tuning candidates without pooling distinct controller alphas."""
+
+    selected_path = root / "selected_learning_rates.csv"
+    selected = pd.read_csv(selected_path) if selected_path.exists() else pd.DataFrame()
+    fig, axes = _environment_axes((16, 9))
+    for ax, environment in zip(axes, ENVIRONMENTS):
+        subset = summaries[summaries.environment == environment]
+        for condition, frame in subset.groupby("condition", sort=False):
+            grouped = frame.groupby("candidate_alpha", sort=True)["final_performance"].median()
+            ax.plot(grouped.index, grouped.values, marker="o", label=condition)
+            if len(selected):
+                chosen = selected[
+                    (selected.environment == environment) & (selected.condition == condition)
+                ]
+                if len(chosen):
+                    alpha = float(chosen.iloc[0].selected_alpha)
+                    ax.axvline(alpha, color=PALETTE.get(condition, "#777777"), alpha=0.12)
+        ax.set_xscale("log")
+        ax.set(title=environment, xlabel="Candidate controller alpha", ylabel="Median final performance")
+        ax.grid(alpha=0.25)
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=min(5, max(1, len(labels))))
+    fig.suptitle("Controller-alpha tuning on tuning seeds only")
+    _finish(fig, figures / "alpha_tuning_performance.png", rect=(0.0, 0.10, 1.0, 0.97))
+
+    failures = summaries.groupby(
+        ["environment", "condition", "candidate_alpha"], sort=False
+    )["catastrophic_failure"].mean().reset_index()
+    fig, axes = _environment_axes((16, 9))
+    for ax, environment in zip(axes, ENVIRONMENTS):
+        subset = failures[failures.environment == environment]
+        for condition, frame in subset.groupby("condition", sort=False):
+            frame = frame.sort_values("candidate_alpha")
+            ax.plot(frame.candidate_alpha, frame.catastrophic_failure, marker="o", label=condition)
+        ax.set_xscale("log")
+        ax.set_ylim(-0.02, 1.02)
+        ax.set(title=environment, xlabel="Candidate controller alpha", ylabel="Failure rate")
+        ax.grid(alpha=0.25)
+    _finish(fig, figures / "alpha_tuning_failure_rate.png")
+
+
 def make_cross_figures(
     root: str | Path,
     summaries: pd.DataFrame,
@@ -355,17 +585,26 @@ def make_cross_figures(
     root = Path(root)
     figures = root / "figures"
     figures.mkdir(exist_ok=True)
+    if "candidate_alpha" in summaries and not summaries["candidate_alpha"].isna().all():
+        _alpha_tuning_figures(root, summaries, figures)
+        return
     _faceted_learning_curves(steps, figures)
     _faceted_bars(summaries, figures, None, "final_performance_by_environment.png")
     _faceted_bars(
         summaries, figures, {"raw", "whitened", "gaussian_moment", "matched"},
         "task_matched_vs_generic.png",
     )
+    join_keys = ["environment", "condition", "seed"]
+    if all(
+        "candidate_alpha" in frame and not frame["candidate_alpha"].isna().all()
+        for frame in (summaries, representation, task)
+    ):
+        join_keys.append("candidate_alpha")
     joined = summaries.merge(
         representation,
-        on=["environment", "condition", "seed"],
+        on=join_keys,
         suffixes=("", "_representation"),
-    ).merge(task, on=["environment", "condition", "seed"], suffixes=("", "_task"))
+    ).merge(task, on=join_keys, suffixes=("", "_task"))
     _scatter_by_metric(joined, "effective_rank", figures / "effective_rank_vs_control.png", "Effective rank")
     _scatter_by_metric(joined, "isotropy_error", figures / "isotropy_vs_control.png", "Isotropy error")
     _scatter_by_metric(joined, "task_decodability", figures / "decodability_vs_control.png", "Held-out task decodability")
@@ -375,3 +614,5 @@ def make_cross_figures(
     _property_heatmap(representation, figures)
     _environment_geometry(root, figures)
     _nonstationary_adaptation(steps, figures)
+    _hidden_velocity_figures(summaries, task, figures)
+    _decision_probe_figures(root, summaries, task, figures)
