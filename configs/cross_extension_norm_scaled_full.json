@@ -1,0 +1,26 @@
+{
+  "profile": "cross_extension_norm_scaled_full",
+  "experiment_stage": "norm_scaled",
+  "controller_alpha_mode": "norm_scaled",
+  "controller_alpha_norm": {"ema_beta": 0.01, "epsilon": 0.000001, "alpha_min": 0.000001, "alpha_max_multiplier": 1.0},
+  "remote_full": true,
+  "seeds": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+  "seed_sets": {"pilot": [200, 201, 202, 203, 204], "tuning": [100, 101, 102, 103, 104], "evaluation": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19], "smoke": [9000, 9001]},
+  "environments": {
+    "tmaze": {"interactions": 200000, "conditions": ["observation_only", "oracle", "raw", "standardized", "whitened", "gaussian_moment", "matched"], "bank": "mixed", "kwargs": {"corridor_length": 5}, "threshold": 0.8},
+    "ringworld": {"interactions": 200000, "conditions": ["observation_only", "oracle", "raw", "standardized", "whitened", "gaussian_moment", "matched"], "bank": "mixed", "kwargs": {"size": 12}, "threshold": 0.8},
+    "two_loop": {"interactions": 220000, "conditions": ["observation_only", "oracle", "raw", "standardized", "whitened", "gaussian_moment", "matched"], "bank": "mixed", "kwargs": {"loop_lengths": [8, 10]}, "threshold": 0.8},
+    "hidden_velocity": {"interactions": 260000, "conditions": ["observation_only", "oracle", "raw", "standardized", "whitened", "gaussian_moment", "matched"], "bank": "mixed", "kwargs": {"noise_std": 0.015}, "control_alpha": 0.002, "gamma": 0.95, "threshold": -0.3},
+    "hidden_velocity_informative": {"interactions": 260000, "conditions": ["observation_only", "oracle", "raw", "standardized", "whitened", "gaussian_moment", "matched"], "bank": "mixed", "kwargs": {"rho": 0.97, "acceleration": 0.09, "noise_std": 0.01, "velocity_cost_weight": 1.0, "action_cost_weight": 0.015, "disturbance_interval_min": 96, "disturbance_interval_max": 144, "disturbance_magnitude_min": 0.24, "disturbance_magnitude_max": 0.38, "recovery_window": 32}, "control_alpha": 0.002, "gamma": 0.95, "threshold": -0.4}
+  },
+  "horizons": [0.65, 0.9], "trace_dim": 16, "predictive_alpha": 0.006, "control_alpha": 0.006,
+  "gamma": 0.98, "lambda": 0.8, "epsilon": 0.05,
+  "transform_eps": 0.001, "transform_min_samples": 128, "cov_update_every": 100,
+  "moment_beta": 0.005, "moment_learning_rate": 0.0005,
+  "metrics_stride": 200, "analysis_burn_in": 5000, "reservoir_size": 10000,
+  "moving_window": 300, "final_window": 2000, "settling_consecutive_steps": 20,
+  "recovery_consecutive_steps": 8, "workers": 16,
+  "robust_bootstrap_samples": 2000, "robust_bootstrap_seed": 1729,
+  "catastrophic_failure": {"global": {"max_control_update_norm_above": 100.0}, "environments": {"hidden_velocity": {"final_window_reward_below": -6.0, "final_window_stabilization_rate_below": 0.005, "final_window_position_rmse_above": 2.4}, "hidden_velocity_informative": {"final_window_reward_below": -7.0, "final_window_stabilization_rate_below": 0.005, "final_window_position_rmse_above": 2.4}}},
+  "output_dir": "results/cross_extension/norm_scaled"
+}
