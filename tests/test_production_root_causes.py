@@ -98,7 +98,7 @@ def test_repository_containment_rejects_escape_before_writing(tmp_path):
     root = repository_root()
     inside = contained_path(root / "results" / "unit", root, label="result")
     assert inside.is_relative_to(root)
-    outside = tmp_path / "escaped"
+    outside = root.parent / f".{root.name}-{tmp_path.name}-escaped"
     with pytest.raises(ValueError, match="escapes repository root"):
         contained_path(outside, root, label="result")
     assert not outside.exists()
