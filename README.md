@@ -39,27 +39,27 @@ The fixed mixed bank has ten semantic GVFs: observation/echo, junction, positive
 
 ## 8. Metrics
 
-The runner records trial accuracy, cumulative reward, time to threshold, GVF TD errors, update and parameter norms, non-finite counts, full-stream and true-decision held-out probes, covariance eigenvalues, effective rank, isotropy, condition number, correlation, skewness, kurtosis, transform drift, and non-stationary adaptation where applicable. Hidden velocity additionally logs the environment-authored position/velocity/action cost decomposition on every step, RMSE, stabilization, boundary, disturbance, settling, and recovery metrics. Condition summaries include median, IQM, bootstrap intervals, quantiles, extrema, and configured catastrophic-failure rates rather than relying only on mean ± SEM.
+The runner records trial accuracy, cumulative reward, time to threshold, GVF TD errors, update and parameter norms, real non-finite/extreme counts, full-stream and true-decision held-out probes, covariance eigenvalues, effective rank, isotropy, condition number, correlation, skewness, kurtosis, transform drift, and non-stationary adaptation where applicable. Hidden velocity computes its authoritative cost decomposition every step and stores online summaries, final windows, strided diagnostics, and disturbance/recovery events. Condition summaries include median, IQM, bootstrap intervals, quantiles, extrema, and configured catastrophic-failure rates rather than relying only on mean ± SEM.
 
 ## 9. Local installation
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+python -m pip install -r requirements.txt -r requirements-dev.txt
+python -m pip install --no-build-isolation --no-deps -e .
 ```
 
-Python >= 3.10 is supported. Both Windows and remote Linux use a repository-local `.venv`. `pyproject.toml` is the primary dependency definition; `requirements.txt` contains runtime NumPy/pandas/Matplotlib dependencies, and `requirements-dev.txt` adds pytest. There are no external datasets or model weights.
+Python >= 3.10 is supported. Use the current Python environment; production cloud execution specifically uses `/usr/bin/python3` and does not create or activate a virtual environment. There are no external datasets, checkpoints, or model weights.
 
 ## 10. Unit tests
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest -q
+python -m pytest -q
 ```
 
 ## 11. Smoke command
 
 ```powershell
-.\scripts\run_smoke.ps1 -RunName local-smoke -Workers 1
+python scripts\run_cross_experiment.py --config configs\cross_smoke.json --workers 2 --run-name local-smoke
 ```
 
 The smoke profile uses seed 0, 3,000 interactions, and the observation-only, oracle, raw, and whitened conditions.
@@ -67,7 +67,7 @@ The smoke profile uses seed 0, 3,000 interactions, and the observation-only, ora
 ## 12. Pilot command
 
 ```powershell
-.\scripts\run_pilot.ps1 -RunName preregistered-pilot -Workers 3
+python scripts\run_cross_experiment.py --config configs\cross_pilot.json --workers 3 --run-name preregistered-pilot
 ```
 
 The pilot uses seeds 0, 1, and 2, 20,000 interactions, and all registered conditions. It is diagnostic evidence, not a final experiment.
@@ -78,18 +78,11 @@ The 20-seed full profiles are blocked unless both safeguards are present: `RL_RU
 
 ## 14. Remote command
 
-```bash
-RL_RUN_CONTEXT=remote bash scripts/remote_one_click.sh \
-  --allow-full-run \
-  --workers 16 \
-  --run-name full-suite-<COMMIT_SHA>
-```
-
-The one-click entry creates `.venv`, installs both requirements files, runs tests and three smoke batches, then launches the guarded CPU suite through tmux or nohup. Parallel units are independent condition × seed tasks; BLAS threads are capped at one. The scripts inspect cgroup CPU limits and refuse unsafe worker counts. GPU inventory is recorded, but no GPU backend is used because the project is small linear NumPy code. See `docs/REMOTE_ONE_CLICK_GUIDE_ZH.md` and `docs/REMOTE_RESOURCE_STRATEGY.md`.
+The authoritative remote procedure is [docs/PRODUCTION_ROOT_CAUSE_FIX_AND_CLOUD_RUN_ZH.md](docs/PRODUCTION_ROOT_CAUSE_FIX_AND_CLOUD_RUN_ZH.md). It uses `/usr/bin/python3`, foreground execution with `tee`, repository-contained temp/cache/results/logs/artifacts, a real storage pilot, cgroup-aware preflight, and both full-run gates. It never uses tmux, nohup, setsid, a scheduler, or a virtual environment.
 
 ## 15. Results directories
 
-Each batch uses `results/<profile>/<run-name>/`; each condition/seed is isolated under `runs/<condition>/seed_NNN/`. Configs, manifests, per-trial/prediction/representation/hidden-state/update CSVs, summaries, logs, learned GVF arrays, and real figures are recorded. Existing run directories are never overwritten.
+Each condition/seed is isolated in a run partition. Production compact v2 stores scalar/probe CSVs plus compressed strided, decision, disturbance, and model-state NPZ files. It never duplicates all raw traces into monolithic aggregate CSVs, and existing or failed run directories are never overwritten.
 
 ## 16. Proposal paths
 
@@ -110,9 +103,9 @@ Every manifest records the exact command, config hash, seed, Git branch/commit/d
 The environment-aware runner is separate from the verified core runner:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts\run_cross_diagnostics.py --run-name cross-diagnostics-unique
-.\.venv\Scripts\python.exe scripts\run_cross_experiment.py --config configs\cross_smoke.json --workers 4 --run-name cross-smoke-unique
-.\.venv\Scripts\python.exe scripts\run_cross_experiment.py --config configs\cross_pilot.json --workers 4 --run-name cross-pilot-unique
+python scripts\run_cross_diagnostics.py --run-name cross-diagnostics-unique
+python scripts\run_cross_experiment.py --config configs\cross_smoke.json --workers 4 --run-name cross-smoke-unique
+python scripts\run_cross_experiment.py --config configs\cross_pilot.json --workers 4 --run-name cross-pilot-unique
 ```
 
 Local pilot evidence uses seeds 0-2 and a staged matrix. Same-budget compact/mixed and matched/short-horizon configs are separate so the project never runs a full local Cartesian product. The current local result is heterogeneous: E3 has positive conditioning/moment signals, E1 is null, E2 is uncertain, E4 often favors raw, and the E2 circular prior fails its real-stream phase-order property gate. See `docs/CROSS_ENV_RESULTS.md`; these are pilot observations, not final claims.
@@ -139,29 +132,17 @@ Four environment-specific `cross_full_<environment>.json` configs and the select
 
 The production extension separates fixed-alpha, condition-specific tuning/tuned evaluation, and causal norm-scaled alpha modes. Fixed mode preserves the original SARSA update. Tuning uses seeds 100–104 and the fixed multiplier grid `base × [0.125, 0.25, 0.5, 1, 2, 4]`; evaluation uses seeds 0–19 and only consumes the generated `selected_learning_rates.csv`. Design seeds 200–204 and smoke seeds 9000–9001 remain disjoint.
 
-The four guarded profiles contain exactly 1000, 1500, 1000, and 700 runs. Do not run them locally. On the remote CPU environment, the default end-to-end entry point is:
+The four guarded profiles contain exactly 1000, 1500, 1000, and 700 runs. Do not run them locally. Run the actual storage pilot first, then pass its repository-contained report to `scripts/run_cross_extension_remote.sh`. Exact fresh, resume, retry-invalid, status, validation, package, and SHA-256 commands are in [docs/PRODUCTION_ROOT_CAUSE_FIX_AND_CLOUD_RUN_ZH.md](docs/PRODUCTION_ROOT_CAUSE_FIX_AND_CLOUD_RUN_ZH.md). Successful runs are reused only when config, commit, schema, identity, required files, and runtime validity all match.
 
-```bash
-export RL_RUN_CONTEXT=remote
-bash scripts/run_cross_extension_remote.sh \
-  --allow-full-run \
-  --stage all \
-  --run-name cross-extension-$(git rev-parse --short HEAD) \
-  --workers 16 \
-  --resume
-```
-
-Successful run directories are skipped on resume; failed/incomplete attempts are preserved before retry. The workflow produces stage aggregates, robust plots, Chinese summaries, `analysis_manifest.json`, full and analysis-core tarballs, and verified `.sha256` files. See `docs/CROSS_EXTENSION_REMOTE_RUN_GUIDE_ZH.md` and `docs/HIDDEN_VELOCITY_INFORMATIVE_DESIGN.md`.
+The local 50-run storage calibration projected a 22.742 GiB peak for all 4200 formal runs, including the source tree, a full archive budgeted without assuming compression savings, and an analysis-core archive. The remote filesystem must reproduce a clean-final-commit passing pilot report before the guarded full command will start.
 
 ## 23. Remote deployment and reproducibility
 
-The canonical Linux entry is `scripts/remote_one_click.sh`. Formal execution always requires both `RL_RUN_CONTEXT=remote` and `--allow-full-run`; local work is limited to tests, smoke, finite pilots, and dry-run. Results are isolated under `results/remote/<run-name>/`, incomplete or failed seeds remain visible, and the final analysis package includes aggregate CSVs, figures, configs, manifests, log summaries, and a SHA-256 file.
+The canonical production Linux entries are `scripts/run_storage_pilot.sh` and `scripts/run_cross_extension_remote.sh`. Formal execution always requires both `RL_RUN_CONTEXT=remote` and `--allow-full-run`; local work is limited to tests, diagnostics, smoke, validation, and finite pilots. Results stay under `results/`, logs under `logs/`, packages under `artifacts/`, and cache/temp state under `.runtime/`.
 
-- Dependency guide: `docs/DEPENDENCY_GUIDE_ZH.md`
-- One-click tutorial: `docs/REMOTE_ONE_CLICK_GUIDE_ZH.md`
-- Command cheatsheet: `docs/REMOTE_COMMAND_CHEATSHEET_ZH.md`
+- Production root-cause and cloud guide: `docs/PRODUCTION_ROOT_CAUSE_FIX_AND_CLOUD_RUN_ZH.md`
 - Resource strategy: `docs/REMOTE_RESOURCE_STRATEGY.md`
 - Deployment reconciliation/report: `docs/REMOTE_DEPLOYMENT_RECONCILIATION.md`, `docs/REMOTE_DEPLOYMENT_REPORT.md`
 - Remote plans: `configs/remote_smoke.json`, `configs/remote_full_core.json`, `configs/remote_full_cross_environment.json`, `configs/remote_full_nonstationary.json`, `configs/remote_full_suite.json`
 
-Known deployment limitations: there is no CUDA backend, no automatic cloud scheduler integration, and nohup cannot survive destruction of a cloud container. Use a platform job or `--foreground` when container lifetime is not guaranteed.
+Known deployment limitations: there is no CUDA backend and no background/scheduler integration. The required formal command runs in the current foreground shell, so the cloud terminal/container must remain alive.

@@ -44,8 +44,13 @@ def test_decorrelation_and_whitening_fulfill_distinct_properties():
 def test_whitening_is_finite_for_singular_and_repeated_features():
     values = np.linspace(-1, 1, 500)
     stream = np.column_stack((values, values, np.ones_like(values)))
-    output = transformed("whitened", stream)
+    transform = FeatureTransform("whitened", 3, min_samples=40, update_every=20)
+    output = np.vstack([transform.transform(row) for row in stream])
     assert np.isfinite(output).all()
+    metrics = transform.state_metrics()
+    assert 0.0 <= metrics["covariance_min_eigenvalue"] <= metrics["covariance_max_eigenvalue"]
+    assert metrics["regularized_min_eigenvalue"] >= transform.eps
+    assert np.isfinite(metrics["whitening_gain"])
 
 
 def test_unit_sphere_has_unit_norm_after_nonzero_warmup():
@@ -54,4 +59,3 @@ def test_unit_sphere_has_unit_norm_after_nonzero_warmup():
     output = transformed("unit_sphere", stream)
     norms = np.linalg.norm(output, axis=1)
     assert np.allclose(norms, 1.0, atol=0.01)
-

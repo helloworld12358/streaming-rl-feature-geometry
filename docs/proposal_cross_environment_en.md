@@ -33,3 +33,5 @@ The contribution is a controlled map from property fulfillment to predictive inf
 ## Production analysis addendum
 
 The confirmatory plan now reports long-tailed seed distributions and preregistered catastrophic failures, separates fixed-alpha from tuning-seed-selected alpha and causal norm-scaled alpha, and adds a minimally modified informative hidden-velocity environment. T-maze and Two-loop interpretations include group-held-out probes at true decision times. These additions diagnose optimization confounding and information availability; they do not authorize post-evaluation tuning or change the linear streaming hypothesis.
+
+Production execution uses real per-transition finite/extreme validity tracking and compact partitioned storage. Causal covariance shrinkage, smooth whitening refresh, and time-scale-consistent moment-output statistics address the observed estimator/controller scale instability without clipping, changing the controller, removing conditions, or relaxing the `1e12` validity limit. The formal 4200-run matrix remains unchanged and unexecuted locally.

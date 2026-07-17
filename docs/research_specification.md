@@ -86,3 +86,11 @@ The serial extension is specified in `CROSS_ENV_EXTENSION_SPEC.md` and its froze
 Additional registered representations are fixed top-k sparse, causal bounded, and the fixed-semantic M1-M4 simplex/circular/block/anisotropic priors. Whitening remains a second-order transform and `gaussian_moment` remains exploratory. The local matrix uses seeds 0-2, E1-E4, core generic representations, and matched priors. Compact/mixed and matched/short horizons are paired only under raw/matched at identical budgets. Remote full configs use 20 seeds and require both independent safeguards.
 
 The local pilot has now been observed and is reported in `CROSS_ENV_RESULTS.md`; it must not be used to retune the frozen profiles. The superseding property diagnostic records one failed condition: E2's circular output has unit radius but does not meet the real-stream phase-order threshold. Remote full and non-stationary adaptation remain planned and unverified.
+
+## Production validity and storage addendum
+
+The production extension retains fixed-full/lr-tune/lr-eval/norm-scaled at exactly 1000/1500/1000/700 runs. A run is scientifically complete only when its config hash, Git commit, schema, identity, required compact files, finite/extreme checks, and `runtime_validity.json` all agree. Finite values above `1e12` are invalid rather than silently accepted; the threshold is not relaxed, and no clipping or fallback condition is permitted.
+
+Whitening uses causal covariance shrinkage and smoothed matrix refresh as second-order estimator regularization. `gaussian_moment` uses causal exponential output moments on the same time scale as its changing shape parameters and remains an exploratory transform without a distributional guarantee. These changes address estimator-time-scale leverage without changing the controller update, deleting failures, or feeding diagnostics back to the agent.
+
+Formal output uses compact v2 run partitions: online scalar/final-window summaries, strided typed traces, decision/event traces, optional explicitly selected full diagnostics, and model/transform state. Aggregation never materializes duplicate monolithic raw trace tables. A real all-environment/all-condition storage pilot calibrates the 4200-run result, full-package, analysis-core, and peak estimates before production execution.

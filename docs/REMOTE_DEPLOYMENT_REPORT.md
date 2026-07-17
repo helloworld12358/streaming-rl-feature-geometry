@@ -1,5 +1,7 @@
 # Remote Deployment Implementation Report
 
+> Historical implementation record. The current production workflow is documented in [`PRODUCTION_ROOT_CAUSE_FIX_AND_CLOUD_RUN_ZH.md`](PRODUCTION_ROOT_CAUSE_FIX_AND_CLOUD_RUN_ZH.md); its `/usr/bin/python3`, foreground-only, repository-contained constraints supersede the earlier venv/background workflow below.
+
 ## 实现范围
 
 部署层只编排既有严格 streaming、非深度、线性实验，不修改科研变量。正式 suite 包含：

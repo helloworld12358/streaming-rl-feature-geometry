@@ -11,5 +11,9 @@ htmlcov/
 .ruff_cache/
 .mplconfig/
 .env
+.local_diagnostics/
+.runtime/
+logs/
+artifacts/
 results/*
 !results/.gitkeep

@@ -23,6 +23,14 @@ import numpy as np
 import pandas as pd
 
 from .controller import SarsaLambda
+from .compact_storage import (
+    COMPACT_SCHEMA_VERSION,
+    COMPACT_TRACE_FILES,
+    HiddenVelocityAccumulator,
+    ScalarMoments,
+    read_columnar_npz,
+    write_columnar_npz,
+)
 from .alpha_tuning import (
     DEFAULT_SEED_SETS,
     candidate_alphas,
@@ -36,11 +44,17 @@ from .cross_metrics import (
     decision_conditioned_metrics,
     task_information_metrics,
 )
-from .cross_reporting import make_cross_figures
 from .experiment import config_hash, dependency_versions, git_value, write_json
 from .predictive import CausalPredictiveBank
 from .priors import MATCHED_PRIOR_FOR_ENV, TaskMatchedTransform
+from .production_runtime import (
+    contained_path,
+    repository_root,
+    safe_worker_limit,
+    validate_runtime_environment,
+)
 from .robust_stats import build_robust_summaries
+from .runtime_validation import RuntimeValidityError, RuntimeValidityTracker
 from .transforms import FeatureTransform, rep_metrics
 
 
@@ -96,7 +110,7 @@ HIDDEN_SUMMARY_DEFAULTS: dict[str, Any] = {
     "post_disturbance_velocity_rmse": np.nan,
     "post_disturbance_stabilization_rate": np.nan,
 }
-RUN_REQUIRED_ENTRIES = {
+LEGACY_RUN_REQUIRED_ENTRIES = {
     "config.json",
     "manifest.json",
     "predictive_definitions.json",
@@ -114,6 +128,26 @@ RUN_REQUIRED_ENTRIES = {
     "stdout.log",
     "figures",
 }
+COMPACT_RUN_REQUIRED_ENTRIES = {
+    "config.json",
+    "manifest.json",
+    "predictive_definitions.json",
+    "representation_metrics.csv",
+    "task_information_metrics.csv",
+    "decision_probe_by_position.csv",
+    "summary.csv",
+    "summary.json",
+    "runtime_validity.json",
+    "stdout.log",
+    "figures",
+    *COMPACT_TRACE_FILES,
+}
+
+
+def required_run_entries(config: dict[str, Any]) -> set[str]:
+    if config.get("storage_schema", "legacy_csv") == "compact_v2":
+        return set(COMPACT_RUN_REQUIRED_ENTRIES)
+    return set(LEGACY_RUN_REQUIRED_ENTRIES) | {"runtime_validity.json"}
 
 
 def load_cross_config(path: str | Path) -> dict[str, Any]:
@@ -195,12 +229,17 @@ def load_cross_config(path: str | Path) -> dict[str, Any]:
         tuning = config.setdefault("alpha_tuning", {})
         multipliers = tuning.setdefault("multipliers", [0.125, 0.25, 0.5, 1.0, 2.0, 4.0])
         candidate_alphas(float(config["control_alpha"]), list(map(float, multipliers)))
+    storage_schema = str(config.get("storage_schema", "legacy_csv"))
+    if storage_schema not in {"legacy_csv", "compact_v2"}:
+        raise ValueError("storage_schema must be legacy_csv or compact_v2")
     defaults = {
         "transform_eps": 1e-3,
         "transform_min_samples": 64,
         "cov_update_every": 50,
         "moment_beta": 0.005,
         "moment_learning_rate": 0.0005,
+        "covariance_shrinkage": 0.05,
+        "matrix_smoothing": 0.1,
         "metrics_stride": 25,
         "analysis_burn_in": 500,
         "reservoir_size": 3000,
@@ -219,6 +258,11 @@ def load_cross_config(path: str | Path) -> dict[str, Any]:
         "recovery_consecutive_steps": 8,
         "robust_bootstrap_samples": 2000,
         "robust_bootstrap_seed": 1729,
+        "storage_schema": "legacy_csv",
+        "result_schema_version": COMPACT_SCHEMA_VERSION,
+        "extreme_finite_limit": 1e12,
+        "diagnostic_full_trace_runs": [],
+        "enforce_repository_containment": False,
         "catastrophic_failure": {
             "global": {"max_control_update_norm_above": 100.0},
             "environments": {
@@ -269,6 +313,8 @@ def _manifest_base(
         "gpu_detection": os.environ.get("RL_REMOTE_GPU_DETECTION", "not-recorded"),
         "gpu_backend_used": "none",
         "parallelism": "cpu-process",
+        "result_schema_version": int(config.get("result_schema_version", COMPACT_SCHEMA_VERSION)),
+        "storage_schema": config.get("storage_schema", "legacy_csv"),
     }
 
 
@@ -316,11 +362,32 @@ def _make_transform(condition: str, environment: str, d: int, config: dict[str, 
         min_samples=config["transform_min_samples"],
         moment_beta=config["moment_beta"],
         moment_learning_rate=config["moment_learning_rate"],
+        covariance_shrinkage=config.get("covariance_shrinkage", 0.05),
+        matrix_smoothing=config.get("matrix_smoothing", 0.1),
     )
 
 
 def _transform(transform: Any, values: np.ndarray) -> np.ndarray:
     return values.copy() if transform is None else transform.transform(values)
+
+
+def _transform_snapshot(transform: Any) -> dict[str, Any]:
+    if transform is None:
+        return {"kind": "none"}
+    result: dict[str, Any] = {
+        "kind": str(getattr(transform, "kind", type(transform).__name__)),
+        "sample_count": int(getattr(getattr(transform, "stats", None), "n", 0)),
+        "last_output_rms": float(getattr(transform, "last_output_rms", 0.0)),
+        "last_output_max_abs": float(getattr(transform, "last_output_max_abs", 0.0)),
+        "last_matrix_change": float(getattr(transform, "last_matrix_change", 0.0)),
+        "whitening_gain": float(getattr(transform, "last_whitening_gain", 1.0)),
+    }
+    if hasattr(transform, "gaussian_skew_parameter"):
+        result.update(
+            gaussian_skew_parameter=np.asarray(transform.gaussian_skew_parameter).tolist(),
+            gaussian_tail_parameter=np.asarray(transform.gaussian_tail_parameter).tolist(),
+        )
+    return result
 
 
 def _first_stable_run(stabilized: np.ndarray, consecutive: int, start: int = 0) -> float:
@@ -467,10 +534,12 @@ def _execute_cross_run(
     diagnostic_dim = len(_diagnostic_features(condition, observation, env.oracle_features, transformed))
     latent_dim = len(env.latent_state)
     reservoir = DiagnosticReservoir(config["reservoir_size"], seed + 101)
+    compact_storage = config.get("storage_schema", "legacy_csv") == "compact_v2"
     step_rows: list[dict[str, Any]] = []
     decision_rows: list[dict[str, Any]] = []
     prediction_rows: list[dict[str, Any]] = []
     update_rows: list[dict[str, Any]] = []
+    compact_trace_rows: list[dict[str, Any]] = []
     recent_rewards: deque[float] = deque(maxlen=config["moving_window"])
     recent_correct: deque[float] = deque(maxlen=config["moving_window"])
     all_rewards: list[float] = []
@@ -482,6 +551,34 @@ def _execute_cross_run(
     control_updates: list[float] = []
     predictive_updates: list[float] = []
     predictive_mse: list[float] = []
+    reward_stats = ScalarMoments()
+    stabilization_stats = ScalarMoments()
+    control_delta_stats = ScalarMoments()
+    control_update_stats = ScalarMoments()
+    predictive_update_stats = ScalarMoments()
+    predictive_mse_stats = ScalarMoments()
+    final_reward_window: deque[float] = deque(maxlen=int(config["final_window"]))
+    final_stabilized_window: deque[float] = deque(maxlen=int(config["final_window"]))
+    prediction_td_squared_sum = np.zeros(bank.d, dtype=np.float64)
+    prediction_cumulant_sum = np.zeros(bank.d, dtype=np.float64)
+    hidden_accumulator = (
+        HiddenVelocityAccumulator(
+            environment=environment,
+            final_window=int(config["final_window"]),
+            settling_consecutive_steps=int(config.get("settling_consecutive_steps", 20)),
+            recovery_consecutive_steps=int(config.get("recovery_consecutive_steps", 8)),
+        )
+        if environment in {"hidden_velocity", "hidden_velocity_informative"}
+        else None
+    )
+    tracker = RuntimeValidityTracker(
+        environment=environment,
+        condition=condition,
+        seed=seed,
+        candidate_alpha=task_options.get("candidate_alpha"),
+        run_dir=run_dir,
+        extreme_finite_limit=float(config.get("extreme_finite_limit", 1e12)),
+    )
     cumulative_reward = 0.0
     threshold_time = -1
     actual_change_point: int | None = None
@@ -498,22 +595,67 @@ def _execute_cross_run(
         analysis_vector = _diagnostic_features(
             condition, observation, current_oracle, transformed
         )
-        next_observation, reward, info = env.step(action)
-        prediction_update = bank.update(next_observation, info.events)
-        next_raw = bank.features(next_observation)
-        next_transformed = (
-            _transform(transform, next_raw)
-            if condition not in BASELINE_CONDITIONS
-            else np.empty(0)
+        try:
+            next_observation, reward, info = env.step(action)
+            prediction_update = bank.update(next_observation, info.events)
+            next_raw = bank.features(next_observation)
+            next_transformed = (
+                _transform(transform, next_raw)
+                if condition not in BASELINE_CONDITIONS
+                else np.empty(0)
+            )
+            next_state = _controller_state(condition, env, next_transformed)
+            next_features = _controller_features(next_observation, next_state)
+            next_action = controller.act(next_features)
+            control_delta, update_norm, parameter_norm = controller.update(
+                features, action, reward, next_features, next_action
+            )
+        except (FloatingPointError, OverflowError, np.linalg.LinAlgError) as error:
+            tracker.record_exception(
+                interaction,
+                error,
+                feature_norm=float(np.linalg.norm(features)),
+                parameter_norm=float(np.linalg.norm(controller.w)),
+                transform_state=_transform_snapshot(transform),
+            )
+            raise AssertionError("unreachable after fail-closed runtime exception")
+        transform_state = _transform_snapshot(transform)
+        transform_metrics: dict[str, Any] = {}
+        if transform is not None:
+            if hasattr(transform, "W"):
+                transform_metrics["whitening_state"] = transform.W
+            if hasattr(transform, "stats"):
+                denominator = max(int(transform.stats.n) - 1, 1)
+                transform_metrics["covariance_state"] = (
+                    transform.stats.M2 / denominator
+                )
+            if hasattr(transform, "gaussian_raw_moments"):
+                transform_metrics["moment_estimator_state"] = transform.gaussian_raw_moments
+        tracker.observe(
+            interaction,
+            {
+                "controller_features": features,
+                "next_controller_features": next_features,
+                "predictive_parameters": bank.w,
+                "controller_parameters": controller.w,
+                "controller_eligibility_trace": controller.e,
+                "predictive_stream_state": bank.current_x,
+                "predictive_current_predictions": bank.current_predictions,
+                "predictive_trace_state": bank.m,
+                "control_td_error": control_delta,
+                "control_update_norm": update_norm,
+                "predictive_td_error": prediction_update.deltas,
+                "predictive_update_norm": prediction_update.update_norm,
+                "reward": reward,
+                "cost": info.diagnostics.get("total_cost") if info.diagnostics else None,
+                "effective_controller_alpha": controller.last_effective_alpha,
+                **transform_metrics,
+            },
+            feature_norm=float(np.linalg.norm(features)),
+            parameter_norm=parameter_norm,
+            update_norm=update_norm,
+            transform_state=transform_state,
         )
-        next_state = _controller_state(condition, env, next_transformed)
-        next_features = _controller_features(next_observation, next_state)
-        next_action = controller.act(next_features)
-        control_delta, update_norm, parameter_norm = controller.update(
-            features, action, reward, next_features, next_action
-        )
-        if not np.isfinite(next_features).all():
-            raise FloatingPointError("non-finite cross-environment controller input")
 
         if interaction >= config["analysis_burn_in"]:
             reservoir.add(
@@ -525,12 +667,22 @@ def _execute_cross_run(
                 phase=info.phase,
             )
         cumulative_reward += reward
-        all_rewards.append(float(reward))
+        reward_stats.update(float(reward))
+        final_reward_window.append(float(reward))
+        if not compact_storage:
+            all_rewards.append(float(reward))
         recent_rewards.append(float(reward))
-        control_deltas.append(control_delta)
-        control_updates.append(update_norm)
-        predictive_updates.append(prediction_update.update_norm)
-        predictive_mse.append(prediction_update.mse)
+        if not compact_storage:
+            control_deltas.append(control_delta)
+            control_updates.append(update_norm)
+            predictive_updates.append(prediction_update.update_norm)
+            predictive_mse.append(prediction_update.mse)
+        control_delta_stats.update(control_delta)
+        control_update_stats.update(update_norm)
+        predictive_update_stats.update(prediction_update.update_norm)
+        predictive_mse_stats.update(prediction_update.mse)
+        prediction_td_squared_sum += np.square(prediction_update.deltas)
+        prediction_cumulant_sum += prediction_update.cumulants
         if info.correct is not None:
             value = float(info.correct)
             all_correct.append(value)
@@ -551,7 +703,10 @@ def _execute_cross_run(
                 decision_row["candidate_alpha"] = task_options["candidate_alpha"]
             decision_rows.append(decision_row)
         if info.stabilized is not None:
-            all_stabilized.append(float(info.stabilized))
+            if not compact_storage:
+                all_stabilized.append(float(info.stabilized))
+            stabilization_stats.update(float(info.stabilized))
+            final_stabilized_window.append(float(info.stabilized))
         if hidden_environment:
             diagnostic = dict(info.diagnostics)
             if not diagnostic:
@@ -560,7 +715,11 @@ def _execute_cross_run(
                 raise AssertionError("hidden-velocity reward must equal negative total cost")
             if not np.isclose(reward, float(diagnostic["reward"])):
                 raise AssertionError("logged hidden-velocity reward differs from environment reward")
-            hidden_diagnostics.append(diagnostic)
+            if compact_storage:
+                assert hidden_accumulator is not None
+                hidden_accumulator.update(interaction, diagnostic)
+            else:
+                hidden_diagnostics.append(diagnostic)
 
         moving_reward = float(np.mean(recent_rewards))
         moving_performance = (
@@ -569,8 +728,16 @@ def _execute_cross_run(
         if threshold_time < 0 and len(recent_rewards) == recent_rewards.maxlen:
             if moving_performance >= target_threshold:
                 threshold_time = interaction
-        record_diagnostics = interaction % config["metrics_stride"] == 0 or info.decision
-        if hidden_environment or record_diagnostics:
+        # Some continuing-control environments make an action decision on every
+        # transition.  Only externally scored decisions need an event row;
+        # otherwise ``info.decision`` would silently defeat the configured
+        # stride and restore full-resolution production traces.
+        record_diagnostics = (
+            interaction % config["metrics_stride"] == 0 or info.correct is not None
+        )
+        if record_diagnostics or (
+            compact_storage and hidden_environment and bool(info.diagnostics.get("disturbance_active", False))
+        ):
             step_row: dict[str, Any] = {
                 "t": interaction,
                 "environment": environment,
@@ -622,6 +789,20 @@ def _execute_cross_run(
             )
             if "candidate_alpha" in task_options:
                 update_rows[-1]["candidate_alpha"] = task_options["candidate_alpha"]
+            if compact_storage:
+                compact_trace_rows.append(
+                    {
+                        **step_rows[-1],
+                        "predictive_td_mse": prediction_update.mse,
+                        "predictive_update_norm": prediction_update.update_norm,
+                        "predictive_parameter_norm": prediction_update.parameter_norm,
+                        "control_td_error": control_delta,
+                        "control_update_norm": update_norm,
+                        "controller_parameter_norm": parameter_norm,
+                        "effective_controller_alpha": controller.last_effective_alpha,
+                        "feature_squared_norm": float(features @ features),
+                    }
+                )
 
         observation, raw, transformed = next_observation, next_raw, next_transformed
         features, action = next_features, next_action
@@ -662,9 +843,12 @@ def _execute_cross_run(
     )
     if "candidate_alpha" in task_options:
         task_row["candidate_alpha"] = task_options["candidate_alpha"]
-    final_rewards = all_rewards[-config["final_window"] :]
     final_correct = all_correct[-config["final_window"] :]
-    final_reward = float(np.mean(final_rewards))
+    final_reward = (
+        float(np.mean(final_reward_window))
+        if compact_storage
+        else float(np.mean(all_rewards[-config["final_window"] :]))
+    )
     final_accuracy = float(np.mean(final_correct)) if final_correct else 0.0
     final_performance = final_reward if hidden_environment else final_accuracy
     pre_change_accuracy = -1.0
@@ -688,6 +872,7 @@ def _execute_cross_run(
             if len(current) == window and float(np.mean(current)) >= target:
                 recovery_time = int(post_times[index] - actual_change_point)
                 break
+    validity = tracker.finalize()
     summary: dict[str, Any] = {
         "environment": environment,
         "condition": condition,
@@ -701,7 +886,7 @@ def _execute_cross_run(
         "overall_accuracy": float(np.mean(all_correct)) if all_correct else 0.0,
         "final_window_accuracy": final_accuracy,
         "cumulative_reward": cumulative_reward,
-        "mean_reward": float(np.mean(all_rewards)),
+        "mean_reward": reward_stats.mean if compact_storage else float(np.mean(all_rewards)),
         "final_window_reward": final_reward,
         "final_performance": final_performance,
         "time_to_threshold": threshold_time,
@@ -709,23 +894,53 @@ def _execute_cross_run(
         "pre_change_accuracy": pre_change_accuracy,
         "final_post_change_accuracy": final_post_change_accuracy,
         "recovery_time": recovery_time,
-        "stabilization_rate": float(np.mean(all_stabilized)) if all_stabilized else 0.0,
-        "final_window_stabilization": float(
-            np.mean(all_stabilized[-config["final_window"] :])
-        ) if all_stabilized else 0.0,
-        "control_cost": float(-np.mean(all_rewards)) if environment == "hidden_velocity" else 0.0,
-        "predictive_td_mse": float(np.mean(predictive_mse)),
-        "control_td_variance": float(np.var(control_deltas)),
-        "mean_control_update_norm": float(np.mean(control_updates)),
-        "max_control_update_norm": float(np.max(control_updates)),
-        "mean_predictive_update_norm": float(np.mean(predictive_updates)),
+        "stabilization_rate": (
+            stabilization_stats.mean
+            if compact_storage and stabilization_stats.n
+            else (float(np.mean(all_stabilized)) if all_stabilized else 0.0)
+        ),
+        "final_window_stabilization": (
+            float(np.mean(final_stabilized_window))
+            if compact_storage and final_stabilized_window
+            else (
+                float(np.mean(all_stabilized[-config["final_window"] :]))
+                if all_stabilized
+                else 0.0
+            )
+        ),
+        "control_cost": (
+            -reward_stats.mean
+            if compact_storage and environment == "hidden_velocity"
+            else (
+                float(-np.mean(all_rewards)) if environment == "hidden_velocity" else 0.0
+            )
+        ),
+        "predictive_td_mse": (
+            predictive_mse_stats.mean if compact_storage else float(np.mean(predictive_mse))
+        ),
+        "control_td_variance": (
+            control_delta_stats.variance if compact_storage else float(np.var(control_deltas))
+        ),
+        "mean_control_update_norm": (
+            control_update_stats.mean if compact_storage else float(np.mean(control_updates))
+        ),
+        "max_control_update_norm": (
+            control_update_stats.maximum if compact_storage else float(np.max(control_updates))
+        ),
+        "mean_predictive_update_norm": (
+            predictive_update_stats.mean
+            if compact_storage
+            else float(np.mean(predictive_updates))
+        ),
         "final_parameter_norm": float(np.linalg.norm(controller.w)),
-        "nan_count": 0,
-        "inf_count": 0,
-        "divergence_flag": 0,
+        "nan_count": int(validity["nan_count"]),
+        "inf_count": int(validity["inf_count"]),
+        "divergence_flag": int(validity["divergence_flag"]),
         "wall_seconds": time.time() - started,
         "run_dir": str(run_dir),
-        "run_status": "ok",
+        "run_status": "valid" if compact_storage else "ok",
+        "result_schema_version": int(config.get("result_schema_version", COMPACT_SCHEMA_VERSION)),
+        "storage_schema": config.get("storage_schema", "legacy_csv"),
         "experiment_stage": config.get("experiment_stage", "fixed"),
         "candidate_alpha": task_options.get("candidate_alpha", np.nan),
         "base_alpha_multiplier": task_options.get("base_alpha_multiplier", np.nan),
@@ -735,10 +950,15 @@ def _execute_cross_run(
         **HIDDEN_SUMMARY_DEFAULTS,
     }
     if hidden_environment:
-        summary.update(_hidden_velocity_summary(hidden_diagnostics, config, environment))
+        if compact_storage:
+            assert hidden_accumulator is not None
+            summary.update(hidden_accumulator.finalize())
+        else:
+            summary.update(_hidden_velocity_summary(hidden_diagnostics, config, environment))
         summary["control_cost"] = summary["mean_total_cost"]
 
-    pd.DataFrame(step_rows).to_csv(run_dir / "step_metrics.csv", index=False)
+    if not compact_storage:
+        pd.DataFrame(step_rows).to_csv(run_dir / "step_metrics.csv", index=False)
     decision_columns = [
         "t",
         "environment",
@@ -752,11 +972,39 @@ def _execute_cross_run(
     ]
     if "candidate_alpha" in task_options:
         decision_columns.append("candidate_alpha")
-    pd.DataFrame(decision_rows, columns=decision_columns).to_csv(
-        run_dir / "decision_metrics.csv", index=False
-    )
-    pd.DataFrame(prediction_rows).to_csv(run_dir / "prediction_metrics.csv", index=False)
-    pd.DataFrame(update_rows).to_csv(run_dir / "update_metrics.csv", index=False)
+    if compact_storage:
+        write_columnar_npz(run_dir / "strided_trace.npz", compact_trace_rows)
+        write_columnar_npz(run_dir / "decision_event_trace.npz", decision_rows)
+        write_columnar_npz(
+            run_dir / "disturbance_event_trace.npz",
+            hidden_accumulator.event_rows if hidden_accumulator is not None else [],
+        )
+        count = max(int(env_spec["interactions"]), 1)
+        np.savez_compressed(
+            run_dir / "prediction_feature_summary.npz",
+            feature_names=np.asarray(bank.feature_names, dtype="U"),
+            mean_td_squared=prediction_td_squared_sum / count,
+            mean_cumulant=prediction_cumulant_sum / count,
+            sample_count=np.asarray([count], dtype=np.int64),
+        )
+        state_payload: dict[str, np.ndarray] = {
+            "predictive_weights": bank.w,
+            "controller_weights": controller.w,
+            "controller_trace": controller.e,
+        }
+        if transform is not None and hasattr(transform, "W"):
+            state_payload["transform_matrix"] = transform.W
+        if transform is not None and hasattr(transform, "gaussian_raw_moments"):
+            state_payload["gaussian_raw_moments"] = transform.gaussian_raw_moments
+            state_payload["gaussian_skew_parameter"] = transform.gaussian_skew_parameter
+            state_payload["gaussian_tail_parameter"] = transform.gaussian_tail_parameter
+        np.savez_compressed(run_dir / "model_state.npz", **state_payload)
+    else:
+        pd.DataFrame(decision_rows, columns=decision_columns).to_csv(
+            run_dir / "decision_metrics.csv", index=False
+        )
+        pd.DataFrame(prediction_rows).to_csv(run_dir / "prediction_metrics.csv", index=False)
+        pd.DataFrame(update_rows).to_csv(run_dir / "update_metrics.csv", index=False)
     pd.DataFrame([representation]).to_csv(run_dir / "representation_metrics.csv", index=False)
     pd.DataFrame([task_row]).to_csv(run_dir / "task_information_metrics.csv", index=False)
     by_position = pd.DataFrame(by_position_rows)
@@ -769,17 +1017,20 @@ def _execute_cross_run(
     by_position.to_csv(run_dir / "decision_probe_by_position.csv", index=False)
     pd.DataFrame([summary]).to_csv(run_dir / "summary.csv", index=False)
     write_json(run_dir / "summary.json", summary)
-    np.savez_compressed(
-        run_dir / "diagnostic_samples.npz",
-        features=sample_features,
-        latents=sample_latents,
-        groups=sample_groups,
-        positions=sample_positions,
-        decisions=sample_decisions,
-        phases=sample_phases,
-        **probe_payload,
-    )
-    np.save(run_dir / "predictive_weights.npy", bank.w)
+    diagnostic_identity = f"{environment}/{condition}/seed_{seed:03d}"
+    if not compact_storage or diagnostic_identity in set(config.get("diagnostic_full_trace_runs", [])):
+        np.savez_compressed(
+            run_dir / "diagnostic_samples.npz",
+            features=sample_features,
+            latents=sample_latents,
+            groups=sample_groups,
+            positions=sample_positions,
+            decisions=sample_decisions,
+            phases=sample_phases,
+            **probe_payload,
+        )
+    if not compact_storage:
+        np.save(run_dir / "predictive_weights.npy", bank.w)
     (run_dir / "stdout.log").write_text(
         f"completed environment={environment} condition={condition} seed={seed}\n",
         encoding="utf-8",
@@ -808,22 +1059,72 @@ def _task_run_dir(task: tuple[Any, ...]) -> Path:
     return base / f"seed_{seed:03d}"
 
 
-def _completed_run(run_dir: Path) -> bool:
-    if not run_dir.is_dir() or not RUN_REQUIRED_ENTRIES <= {path.name for path in run_dir.iterdir()}:
+def _completed_run(
+    run_dir: Path,
+    config: dict[str, Any] | None = None,
+    expected_identity: tuple[str, str, int] | None = None,
+    options: dict[str, Any] | None = None,
+) -> bool:
+    if config is None:
+        try:
+            config = json.loads((run_dir / "config.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return False
+    required = required_run_entries(config)
+    if not run_dir.is_dir() or not required <= {path.name for path in run_dir.iterdir()}:
         return False
     if not (run_dir / "figures").is_dir() or any(
-        not (run_dir / name).is_file() for name in RUN_REQUIRED_ENTRIES - {"figures"}
+        not (run_dir / name).is_file() for name in required - {"figures"}
     ):
         return False
     try:
         manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
         summary = pd.read_csv(run_dir / "summary.csv")
+        validity = json.loads((run_dir / "runtime_validity.json").read_text(encoding="utf-8"))
     except (OSError, ValueError, pd.errors.ParserError, pd.errors.EmptyDataError):
         return False
-    return (
+    if expected_identity is not None:
+        environment, condition, seed = expected_identity
+        if (
+            manifest.get("environment") != environment
+            or manifest.get("condition") != condition
+            or int(manifest.get("seed", -1)) != int(seed)
+        ):
+            return False
+    expected_alpha = (options or {}).get("candidate_alpha")
+    observed_alpha = manifest.get("candidate_alpha")
+    if expected_alpha is not None and (
+        observed_alpha is None or not np.isclose(float(observed_alpha), float(expected_alpha))
+    ):
+        return False
+    required_numeric = [
+        "final_performance",
+        "control_td_variance",
+        "max_control_update_norm",
+        "final_parameter_norm",
+        "nan_count",
+        "inf_count",
+        "divergence_flag",
+    ]
+    if len(summary) != 1 or any(column not in summary for column in required_numeric):
+        return False
+    values = summary[required_numeric].to_numpy(dtype=float)
+    extreme_limit = float(config.get("extreme_finite_limit", 1e12))
+    return bool(
         manifest.get("exit_status") == "ok"
-        and len(summary) == 1
-        and summary.iloc[0].get("run_status") == "ok"
+        and manifest.get("resume_eligible") is True
+        and manifest.get("config_hash") == config_hash(config)
+        and int(manifest.get("result_schema_version", -1))
+        == int(config.get("result_schema_version", COMPACT_SCHEMA_VERSION))
+        and manifest.get("git_commit") == git_value("rev-parse", "HEAD")
+        and summary.iloc[0].get("run_status") in {"ok", "valid"}
+        and validity.get("status") == "valid"
+        and validity.get("resume_eligible") is True
+        and np.isfinite(values).all()
+        and int(summary.iloc[0]["nan_count"]) == 0
+        and int(summary.iloc[0]["inf_count"]) == 0
+        and int(summary.iloc[0]["divergence_flag"]) == 0
+        and not (np.abs(values[:, :4]) > extreme_limit).any()
     )
 
 
@@ -841,7 +1142,9 @@ def run_cross_one(task: tuple[Any, ...]) -> dict[str, Any]:
     root = Path(root_string)
     run_dir = _task_run_dir(task)
     if run_dir.exists():
-        if _completed_run(run_dir) and (options.get("resume") or options.get("retry_failed")):
+        if _completed_run(
+            run_dir, config, (environment, condition, seed), options
+        ) and (options.get("resume") or options.get("retry_failed")):
             return pd.read_csv(run_dir / "summary.csv").iloc[0].to_dict()
         manifest_path = run_dir / "manifest.json"
         failed = False
@@ -849,7 +1152,7 @@ def run_cross_one(task: tuple[Any, ...]) -> dict[str, Any]:
             try:
                 failed = json.loads(manifest_path.read_text(encoding="utf-8")).get(
                     "exit_status"
-                ) == "failed"
+                ) in {"failed", "invalid", "interrupted"}
             except (OSError, ValueError):
                 failed = False
         permitted = bool(options.get("retry_failed")) if failed else bool(options.get("resume"))
@@ -888,12 +1191,17 @@ def run_cross_one(task: tuple[Any, ...]) -> dict[str, Any]:
             config, environment, condition, seed, run_dir, started, options
         )
     except Exception as error:
+        invalid = isinstance(error, RuntimeValidityError)
         manifest.update(
             end_time=datetime.now(timezone.utc).isoformat(),
-            exit_status="failed",
+            exit_status="invalid" if invalid else "failed",
+            run_status="invalid" if invalid else "failed",
             error_type=type(error).__name__,
             error=str(error),
+            resume_eligible=False,
         )
+        if invalid:
+            manifest["first_failure"] = vars(error.failure)
         write_json(run_dir / "manifest.json", manifest)
         (run_dir / "stdout.log").write_text(
             f"failed environment={environment} condition={condition} seed={seed}\n"
@@ -904,6 +1212,8 @@ def run_cross_one(task: tuple[Any, ...]) -> dict[str, Any]:
     manifest.update(
         end_time=datetime.now(timezone.utc).isoformat(),
         exit_status="ok",
+        run_status=summary["run_status"],
+        resume_eligible=True,
         wall_seconds=summary["wall_seconds"],
     )
     write_json(run_dir / "manifest.json", manifest)
@@ -922,6 +1232,18 @@ def _read_many(paths: list[Path]) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True, sort=False) if frames else pd.DataFrame()
 
 
+def _read_compact_many(paths: list[Path]) -> pd.DataFrame:
+    """Read run partitions one at a time; no monolithic aggregate copy is written."""
+
+    frames: list[pd.DataFrame] = []
+    for path in paths:
+        if path.is_file():
+            frame = read_columnar_npz(path)
+            if len(frame):
+                frames.append(frame)
+    return pd.concat(frames, ignore_index=True, sort=False) if frames else pd.DataFrame()
+
+
 def _file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -934,6 +1256,7 @@ def aggregate_cross(
     root: str | Path, config: dict[str, Any] | None = None
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     root = Path(root)
+    from .cross_reporting import make_cross_figures
     if config is None:
         config = json.loads((root / "config.json").read_text(encoding="utf-8"))
     summaries = _read_many(sorted((root / "runs").rglob("summary.csv")))
@@ -941,9 +1264,28 @@ def aggregate_cross(
         sorted((root / "runs").rglob("representation_metrics.csv"))
     )
     task = _read_many(sorted((root / "runs").rglob("task_information_metrics.csv")))
-    steps = _read_many(sorted((root / "runs").rglob("step_metrics.csv")))
-    decisions = _read_many(sorted((root / "runs").rglob("decision_metrics.csv")))
-    updates = _read_many(sorted((root / "runs").rglob("update_metrics.csv")))
+    compact_storage = config.get("storage_schema", "legacy_csv") == "compact_v2"
+    if compact_storage:
+        trace_paths = sorted((root / "runs").rglob("strided_trace.npz"))
+        decision_paths = sorted((root / "runs").rglob("decision_event_trace.npz"))
+        steps = _read_compact_many(trace_paths)
+        decisions = _read_compact_many(decision_paths)
+        updates = steps
+        write_json(
+            root / "trace_partition_inventory.json",
+            {
+                "storage_schema": "compact_v2",
+                "strided_partitions": len(trace_paths),
+                "decision_partitions": len(decision_paths),
+                "strided_bytes": sum(path.stat().st_size for path in trace_paths),
+                "decision_bytes": sum(path.stat().st_size for path in decision_paths),
+                "monolithic_raw_aggregates_written": False,
+            },
+        )
+    else:
+        steps = _read_many(sorted((root / "runs").rglob("step_metrics.csv")))
+        decisions = _read_many(sorted((root / "runs").rglob("decision_metrics.csv")))
+        updates = _read_many(sorted((root / "runs").rglob("update_metrics.csv")))
     decision_by_position = _read_many(
         sorted((root / "runs").rglob("decision_probe_by_position.csv"))
     )
@@ -951,9 +1293,10 @@ def aggregate_cross(
     summaries.to_csv(root / "aggregate_summary.csv", index=False)
     representation.to_csv(root / "aggregate_representation.csv", index=False)
     task.to_csv(root / "aggregate_task_information.csv", index=False)
-    steps.to_csv(root / "aggregate_steps.csv", index=False)
-    decisions.to_csv(root / "aggregate_decisions.csv", index=False)
-    updates.to_csv(root / "aggregate_updates.csv", index=False)
+    if not compact_storage:
+        steps.to_csv(root / "aggregate_steps.csv", index=False)
+        decisions.to_csv(root / "aggregate_decisions.csv", index=False)
+        updates.to_csv(root / "aggregate_updates.csv", index=False)
     decision_by_position.to_csv(root / "aggregate_decision_probe_by_position.csv", index=False)
     robust.to_csv(root / "robust_condition_summary.csv", index=False)
     failures.to_csv(root / "catastrophic_failure_summary.csv", index=False)
@@ -1008,15 +1351,21 @@ def validate_cross_results(root: str | Path, config: dict[str, Any]) -> dict[str
     ]
     if not np.isfinite(summaries[required_numeric].to_numpy()).all():
         raise AssertionError("non-finite required cross-environment summary metrics")
-    if not (summaries["run_status"] == "ok").all():
+    if not summaries["run_status"].isin(["ok", "valid"]).all():
         raise AssertionError("at least one cross-environment run failed")
     for run_dir in sorted(path for path in (root / "runs").rglob("seed_*") if path.is_dir()):
-        missing = sorted(RUN_REQUIRED_ENTRIES - {path.name for path in run_dir.iterdir()})
+        run_config = json.loads((run_dir / "config.json").read_text(encoding="utf-8"))
+        missing = sorted(required_run_entries(run_config) - {path.name for path in run_dir.iterdir()})
         if missing:
             raise AssertionError(f"{run_dir} is missing {missing}")
         manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
         if manifest["exit_status"] != "ok":
             raise AssertionError(f"failed manifest {run_dir}")
+        validity = json.loads((run_dir / "runtime_validity.json").read_text(encoding="utf-8"))
+        if validity.get("status") != "valid" or validity.get("resume_eligible") is not True:
+            raise AssertionError(f"invalid runtime validity record {run_dir}")
+        if manifest.get("config_hash") != config_hash(run_config):
+            raise AssertionError(f"run config hash mismatch {run_dir}")
     return {"result_dir": str(root.resolve()), "runs": len(summaries), "expected_runs": expected}
 
 
@@ -1134,7 +1483,9 @@ def main() -> None:
     parser.add_argument("--allow-full-run", action="store_true")
     parser.add_argument("--aggregate-only", action="store_true")
     parser.add_argument("--resume", action="store_true")
-    parser.add_argument("--retry-failed", action="store_true")
+    parser.add_argument(
+        "--retry-failed", "--retry-invalid", dest="retry_failed", action="store_true"
+    )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--environment", action="append", help="environment filter; repeat or comma-separate")
     parser.add_argument("--condition", action="append", help="condition filter; repeat or comma-separate")
@@ -1158,6 +1509,10 @@ def main() -> None:
     except ValueError as error:
         parser.error(str(error))
     root = Path(args.output_dir or config["output_dir"]) / args.run_name
+    if config.get("enforce_repository_containment", False):
+        repository = repository_root()
+        validate_runtime_environment(repository)
+        root = contained_path(root, repository, label="result_root")
     if args.aggregate_only:
         aggregate_cross(root, config)
         print(json.dumps(validate_cross_results(root, config), sort_keys=True))
@@ -1223,7 +1578,17 @@ def main() -> None:
         selected_learning_rates_sha256=selected_sha256,
     )
     write_json(root / "manifest.json", manifest)
-    workers = max(1, min(args.workers or config["workers"], len(tasks), cpu_count()))
+    requested_workers = int(args.workers or config["workers"])
+    if requested_workers < 1:
+        parser.error("--workers must be positive")
+    if is_full:
+        safe_max, effective_cpus, quota = safe_worker_limit()
+        if requested_workers > safe_max:
+            raise RuntimeError(
+                f"requested workers={requested_workers} exceeds safe maximum={safe_max}; "
+                f"effective_cpus={effective_cpus}, cgroup_quota={quota}"
+            )
+    workers = min(requested_workers, len(tasks), cpu_count())
     try:
         if workers == 1:
             list(map(run_cross_one, tasks))

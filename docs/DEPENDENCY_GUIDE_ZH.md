@@ -1,5 +1,7 @@
 # 依赖安装指南
 
+> 当前云端固定使用现有 `/usr/bin/python3`，pip/cache/temp 均位于仓库内；完整生产命令见 [`PRODUCTION_ROOT_CAUSE_FIX_AND_CLOUD_RUN_ZH.md`](PRODUCTION_ROOT_CAUSE_FIX_AND_CLOUD_RUN_ZH.md)。
+
 ## 三个依赖入口分别是什么
 
 - `pyproject.toml`：项目的主依赖与打包定义。`pip install -e .` 会按它安装当前源码包。
@@ -16,17 +18,16 @@
 bash scripts/bootstrap_remote.sh --workers <WORKERS> --run-name bootstrap-<COMMIT_SHA>
 ```
 
-脚本会创建 `.venv`，升级其中的 pip，按顺序执行：
+脚本不会创建 venv 或 Conda，也不会切换 Python；它按顺序执行：
 
 ```bash
-.venv/bin/python -m pip install -r requirements.txt
-.venv/bin/python -m pip install -r requirements-dev.txt
-.venv/bin/python -m pip install --no-deps -e .
-.venv/bin/python -m pip check
-.venv/bin/python -m pytest -q
+/usr/bin/python3 -m pip install -r requirements.txt -r requirements-dev.txt
+/usr/bin/python3 -m pip install --no-build-isolation --no-deps -e .
+/usr/bin/python3 -m pip check
+/usr/bin/python3 -m pytest -q
 ```
 
-随后运行三个 smoke 批次。不要使用系统 Python 的 root/site-packages 代替 clean venv。
+随后运行 `configs/cross_extension_smoke.json` 的 70-run 生产 smoke。若共享系统 Python 不允许安装，应在平台提供的可写 CPU 环境完成安装；不要临时改用无法在正式节点复现的解释器。
 
 ## GPU 计算节点不能联网时
 
@@ -54,7 +55,7 @@ bash scripts/bootstrap_remote.sh \
 `pyproject.toml` 与 requirements 使用受控版本范围，正式 run manifest 保存实际 Python 和依赖版本。直接提交由 Windows 生成的精确 freeze 会把 Windows wheel 选择误当成 Linux 可复现环境，因此本仓库没有添加平台绑定 `requirements-lock.txt`。需要归档服务器精确环境时执行：
 
 ```bash
-.venv/bin/python -m pip freeze > "results/remote/<RUN_NAME>/pip-freeze.txt"
+/usr/bin/python3 -m pip freeze > "results/remote/<RUN_NAME>/pip-freeze.txt"
 ```
 
 该文件随结果保存，不作为跨平台主依赖源。

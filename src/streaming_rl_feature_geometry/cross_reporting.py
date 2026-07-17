@@ -366,7 +366,10 @@ def _condition_boxplot(
     labels = list(dict.fromkeys(usable["condition"]))
     values = [usable.loc[usable.condition == label, metric].to_numpy() for label in labels]
     fig, ax = plt.subplots(figsize=(max(9, 0.8 * len(labels)), 5.5))
-    ax.boxplot(values, tick_labels=labels, showfliers=True)
+    # Keep the declared Matplotlib >=3.7 API surface: tick_labels was added
+    # later, while setting ticks separately works across the supported range.
+    ax.boxplot(values, showfliers=True)
+    ax.set_xticks(np.arange(1, len(labels) + 1), labels=labels)
     for index, data in enumerate(values, start=1):
         jitter = np.linspace(-0.12, 0.12, len(data)) if len(data) else np.empty(0)
         ax.scatter(index + jitter, data, s=18, alpha=0.65, color="#1f77b4")

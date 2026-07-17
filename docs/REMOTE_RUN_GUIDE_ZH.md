@@ -1,6 +1,8 @@
 # 远程服务器完整运行指南（核心 T-maze）
 
-> 2026-07-17 更新：本文件保留核心单批次历史入口。当前受支持的 clean `.venv` 与一键完整 suite 请使用 `REMOTE_ONE_CLICK_GUIDE_ZH.md`；新指南覆盖下文的 base-Python 安装说明。
+> **历史证据，禁止按本文旧命令执行。** 当前云端硬约束与正式 cross-extension 命令见 [`PRODUCTION_ROOT_CAUSE_FIX_AND_CLOUD_RUN_ZH.md`](PRODUCTION_ROOT_CAUSE_FIX_AND_CLOUD_RUN_ZH.md)；不得使用本文旧版 nohup/venv 命令。
+
+> 本文件从此处以下只保留核心单批次历史入口；不要执行其中命令，也不要跳转到其他旧指南寻找替代入口。
 
 本指南只用于远程 Linux 上的核心 full profiles；不要在本地 Windows 执行 full。跨环境批次见 `docs/CROSS_ENV_REMOTE_RUN_GUIDE_ZH.md`，当前云平台的完整复制粘贴手册见 `docs/CLOUD_PLATFORM_RUNBOOK_ZH.md`。
 

@@ -29,3 +29,5 @@
 ## 生产分析补充
 
 确认性计划新增长尾 seed 分布与预注册 catastrophic failure，明确区分 fixed-alpha、仅由 tuning seeds 选择的 tuned-alpha 和因果 norm-scaled alpha，并加入最小修改的 informative hidden-velocity 环境。T-maze 与 Two-loop 的解释同时报告真实决策时刻、按 group held-out 的 probe。这些分析用于区分 representation 与 optimization 混杂，不允许在看到 evaluation seeds 后调参，也不改变线性严格 streaming 的研究问题。
+
+生产执行新增逐 transition 的 finite/extreme 有效性记录与 compact 分区存储。因果 covariance shrinkage、平滑 whitening refresh 和与矩参数同时间尺度的输出统计用于修复已观测到的 estimator/controller 尺度失稳；不使用 clipping，不改变 controller，不删除 condition，也不提高 `1e12` 阈值。正式 4200-run 矩阵保持不变，且不会在本地执行。

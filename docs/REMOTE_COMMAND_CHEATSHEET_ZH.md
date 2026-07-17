@@ -1,5 +1,7 @@
 # 远程命令速查
 
+> **历史证据，禁止按本文旧命令执行。** 当前可复制命令以 [`PRODUCTION_ROOT_CAUSE_FIX_AND_CLOUD_RUN_ZH.md`](PRODUCTION_ROOT_CAUSE_FIX_AND_CLOUD_RUN_ZH.md) 为准；旧版 tmux/venv 命令不再受支持。
+
 以下命令均在仓库根目录执行。
 
 ## 第一次：一键安装、测试、smoke、后台启动 full suite

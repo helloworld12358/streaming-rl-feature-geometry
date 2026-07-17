@@ -570,9 +570,15 @@ def validate_results(
         "transform_condition_number",
         "transform_matrix_change_last",
         "transform_matrix_change_mean",
-        "transform_matrix_change_max",
-        "transform_refreshes",
-    }
+            "transform_matrix_change_max",
+            "transform_refreshes",
+            "covariance_shrinkage",
+            "matrix_smoothing",
+            "covariance_min_eigenvalue",
+            "covariance_max_eigenvalue",
+            "regularized_min_eigenvalue",
+            "whitening_gain",
+        }
     extension_transform_metrics = {"active_fraction", "bounded_max_abs"}
     gaussian_transform_metrics = {
         "gaussian_parameter_change_mean",

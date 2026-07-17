@@ -2,7 +2,7 @@
 
 ## 结论
 
-选择高 CPU 配额环境，不为本项目购买 H200 或多卡。用户提供的 128 逻辑 CPU、1.5 TiB RAM、379 GiB 可用磁盘环境是合适起点。先用 `--workers 16`；确认 `/sys/fs/cgroup/cpu.max` 确实允许更多 CPU 后，才逐步提高到 32 或 64。
+选择 CPU 环境，不为本项目购买 H200 或多卡。当前 allocation 虽显示 128 逻辑 CPU 和 1.5 TiB host RAM，但真实 cgroup quota 是 20 CPUs、生产内存预算 80 GiB，仓库文件系统可用约 68 GiB。因此使用 `--workers 16`，硬上限 19；不得在本 allocation 提高到 32、64 或 128。
 
 如果平台必须选择 GPU，选最低成本的 1 × RTX 4090。GPU 利用率为 0 是预期行为，不是错误。
 
@@ -30,18 +30,20 @@ export NUMEXPR_NUM_THREADS=1
 
 - 每个 run 有独立目录、seed、config、manifest、日志和退出状态。
 - 结果目录不覆盖；复用 run name 会失败。
-- formal suite 预计包含大量 CSV，至少预留 100 GiB；脚本每次启动打印 `df -h .`。
+- formal suite 使用 compact v2 typed NPZ partitions，不生成重复的巨型 trace aggregate CSV。高频 continuing-control 动作不会被误当成稀疏决策事件；hidden-velocity 逐步统计在线累计，轨迹严格遵守 `metrics_stride`。必须先用实际 storage pilot 校准，4200-run source + aggregate + full/analysis-core package 的预计峰值目标不超过 50 GiB，并另留 10 GiB 安全余量。
 - 没有外部数据集。clone、pip/wheel 下载完成后，smoke 和 full 运行不需要联网。
 - 正式分析包排除逐 step 原始流，只包含 aggregates、figures、configs、manifests、日志摘要和 SHA-256。
+
+本地 50-run storage pilot 的分类外推结果是：4200-run source 11.312 GiB、无压缩收益假设下的 full package 上界 11.374 GiB、analysis-core 0.056 GiB、同时存在的 peak 22.742 GiB；compact traces 是最大类别（11.135 GiB）。这通过 50 GiB 目标与额外 10 GiB free-space margin，但远端正式运行前仍须在 clean final commit 和目标文件系统重跑 pilot/preflight。
 
 ## 推荐值
 
 | 可用 CPU quota | 推荐起始 workers |
 |---:|---:|
 | 20 | 16 |
-| 32 | 24 |
-| 64 | 48 |
-| 128 | 64（确认 I/O 后再提高） |
+| 32 | 24（仅适用于真实 cgroup quota 为 32 的其他 allocation） |
+| 64 | 48（仅适用于真实 cgroup quota 为 64 的其他 allocation） |
+| 128 | 64（仅适用于真实 cgroup quota 为 128 的其他 allocation） |
 
 不要根据 `lscpu` 的宿主机数字直接设置 128；先看：
 

@@ -23,7 +23,7 @@ from typing import Any
 import pandas as pd
 
 from .alpha_tuning import candidate_alphas
-from .cross_experiment import aggregate_cross, validate_cross_results
+from .cross_experiment import _completed_run, aggregate_cross, validate_cross_results
 from .experiment import aggregate, config_hash, dependency_versions, validate_results
 
 
@@ -173,7 +173,10 @@ def inspect_run(root: str | Path, config: dict[str, Any] | None = None) -> dict[
         config = read_json(root / "config.json")
     missing: list[str] = []
     failed: list[str] = []
+    invalid: list[str] = []
+    interrupted: list[str] = []
     completed: list[str] = []
+    kind = experiment_kind(config)
     for label, run_dir in expected_run_directories(root, config):
         manifest_path = run_dir / "manifest.json"
         summary_path = run_dir / "summary.csv"
@@ -188,8 +191,16 @@ def inspect_run(root: str | Path, config: dict[str, Any] | None = None) -> dict[
             failed.append(f"{label}:unreadable:{type(error).__name__}")
             continue
         status = rows[0].get("run_status") if len(rows) == 1 else "invalid-summary"
-        if manifest.get("exit_status") == "ok" and status == "ok":
+        scientifically_valid = (
+            _completed_run(run_dir, config) if kind == "cross" else status == "ok"
+        )
+        exit_status = manifest.get("exit_status")
+        if exit_status == "ok" and scientifically_valid:
             completed.append(label)
+        elif exit_status == "invalid":
+            invalid.append(f"{label}:manifest=invalid:summary={status}")
+        elif exit_status in {"running", "interrupted"}:
+            interrupted.append(f"{label}:manifest={exit_status}:summary={status}")
         else:
             failed.append(
                 f"{label}:manifest={manifest.get('exit_status')}:summary={status}"
@@ -199,8 +210,15 @@ def inspect_run(root: str | Path, config: dict[str, Any] | None = None) -> dict[
         "expected_runs": len(missing) + len(failed) + len(completed),
         "completed_runs": len(completed),
         "missing_runs": missing,
-        "failed_runs": failed,
-        "ok": not missing and not failed,
+        "failed_runs": failed + invalid + interrupted,
+        "invalid_runs": invalid,
+        "interrupted_runs": interrupted,
+        "pending_runs": len(missing),
+        "failed_count": len(failed),
+        "invalid_count": len(invalid),
+        "interrupted_count": len(interrupted),
+        "completed_count": len(completed),
+        "ok": not missing and not failed and not invalid and not interrupted,
     }
 
 

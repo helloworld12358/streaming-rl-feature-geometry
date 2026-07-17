@@ -73,4 +73,18 @@ def test_evaluation_tasks_only_consume_preselected_alpha(tmp_path):
 def test_formal_extension_profiles_parse_and_have_exact_run_counts(path, expected):
     config = load_cross_config(path)
     assert config["remote_full"] is True
+    assert config["storage_schema"] == "compact_v2"
+    assert config["result_schema_version"] == 2
+    assert config["enforce_repository_containment"] is True
+    assert config["extreme_finite_limit"] == 1e12
     assert expected_cross_run_count(config) == expected
+
+
+def test_formal_extension_total_remains_4200_runs():
+    paths = (
+        "configs/cross_extension_fixed_full.json",
+        "configs/cross_extension_lr_tune_full.json",
+        "configs/cross_extension_lr_eval_full.json",
+        "configs/cross_extension_norm_scaled_full.json",
+    )
+    assert sum(expected_cross_run_count(load_cross_config(path)) for path in paths) == 4200

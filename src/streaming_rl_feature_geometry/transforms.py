@@ -35,6 +35,34 @@ class OnlineMoments:
         return np.maximum(np.diag(self.cov()), 0.0)
 
 
+class ExponentialMoments:
+    """Causal exponentially weighted diagonal moments for a changing transform."""
+
+    def __init__(self, d: int, beta: float) -> None:
+        if d < 1 or not 0.0 < beta <= 1.0:
+            raise ValueError("invalid exponential-moment parameters")
+        self.d = int(d)
+        self.beta = float(beta)
+        self.n = 0
+        self.mean = np.zeros(self.d, dtype=np.float64)
+        self.second = np.zeros(self.d, dtype=np.float64)
+
+    def update(self, x: np.ndarray) -> None:
+        x = np.asarray(x, dtype=np.float64)
+        if x.shape != (self.d,):
+            raise ValueError(f"expected feature shape {(self.d,)}, got {x.shape}")
+        if self.n == 0:
+            self.mean = x.copy()
+            self.second = np.square(x)
+        else:
+            self.mean += self.beta * (x - self.mean)
+            self.second += self.beta * (np.square(x) - self.second)
+        self.n += 1
+
+    def var(self) -> np.ndarray:
+        return np.maximum(self.second - np.square(self.mean), 0.0)
+
+
 class FeatureTransform:
     """Apply exactly one property constraint using past statistics only."""
 
@@ -62,6 +90,8 @@ class FeatureTransform:
         moment_learning_rate: float = 0.0005,
         gaussian_skew_bound: float = 0.75,
         gaussian_tail_bounds: tuple[float, float] = (0.6, 2.0),
+        covariance_shrinkage: float = 0.05,
+        matrix_smoothing: float = 0.1,
         sparse_top_k: int | None = None,
         bounded_alpha: float = 1.0,
     ) -> None:
@@ -74,6 +104,10 @@ class FeatureTransform:
             raise ValueError("invalid Gaussian-moment hyperparameters")
         if gaussian_skew_bound <= 0 or not 0 < gaussian_tail_bounds[0] <= gaussian_tail_bounds[1]:
             raise ValueError("invalid Gaussian-moment parameter bounds")
+        if not 0.0 <= covariance_shrinkage < 1.0:
+            raise ValueError("covariance_shrinkage must lie in [0, 1)")
+        if not 0.0 < matrix_smoothing <= 1.0:
+            raise ValueError("matrix_smoothing must lie in (0, 1]")
         if sparse_top_k is not None and not 1 <= sparse_top_k <= d:
             raise ValueError("sparse_top_k must lie between one and feature dimension")
         if bounded_alpha <= 0:
@@ -85,6 +119,12 @@ class FeatureTransform:
         self.update_every = int(update_every)
         self.min_samples = int(min_samples)
         self.W = np.eye(d, dtype=np.float64)
+        self.covariance_shrinkage = float(covariance_shrinkage)
+        self.matrix_smoothing = float(matrix_smoothing)
+        self.last_covariance_min_eigenvalue = 0.0
+        self.last_covariance_max_eigenvalue = 0.0
+        self.last_regularized_min_eigenvalue = 0.0
+        self.last_whitening_gain = 1.0
         self.last_refresh = -10**12
         self.last_matrix_change = 0.0
         self.matrix_change_sum = 0.0
@@ -108,7 +148,11 @@ class FeatureTransform:
         self.gaussian_moment_updates = 0
         self.gaussian_parameter_change_sum = 0.0
         self.gaussian_parameter_change_max = 0.0
-        self.gaussian_output_stats = OnlineMoments(d)
+        # The shaping parameters change on the moment_beta time scale.  The
+        # output normalization must use the same causal time scale; cumulative
+        # Welford statistics mix obsolete transform versions and can create
+        # large transient leverage late in a run.
+        self.gaussian_output_stats = ExponentialMoments(d, self.moment_beta)
         self.sparse_top_k = int(sparse_top_k or max(1, d // 3))
         self.bounded_alpha = float(bounded_alpha)
         self.last_active_fraction = 0.0
@@ -124,6 +168,16 @@ class FeatureTransform:
 
     def _refresh(self) -> None:
         covariance = self.stats.cov()
+        raw_values = np.maximum(np.linalg.eigvalsh(covariance), 0.0)
+        scale = float(np.trace(covariance) / self.stats.d)
+        target = np.eye(self.stats.d, dtype=np.float64) * max(scale, self.eps)
+        covariance = (
+            (1.0 - self.covariance_shrinkage) * covariance
+            + self.covariance_shrinkage * target
+        )
+        covariance = 0.5 * (covariance + covariance.T)
+        self.last_covariance_min_eigenvalue = float(raw_values.min())
+        self.last_covariance_max_eigenvalue = float(raw_values.max())
         if self.kind == "decorrelated":
             standard_deviation = np.sqrt(np.maximum(np.diag(covariance), 0.0) + self.eps)
             inverse_scale = np.diag(1.0 / standard_deviation)
@@ -132,11 +186,15 @@ class FeatureTransform:
             values, vectors = np.linalg.eigh(correlation)
             values = np.maximum(values, self.eps)
             inverse_root = vectors @ np.diag(values ** -0.5) @ vectors.T
-            matrix = np.diag(standard_deviation) @ inverse_root @ inverse_scale
+            target_matrix = np.diag(standard_deviation) @ inverse_root @ inverse_scale
         else:
             values, vectors = np.linalg.eigh(covariance)
             values = np.maximum(values, self.eps)
-            matrix = vectors @ np.diag(values ** -0.5) @ vectors.T
+            target_matrix = vectors @ np.diag(values ** -0.5) @ vectors.T
+        matrix = (1.0 - self.matrix_smoothing) * self.W + self.matrix_smoothing * target_matrix
+        matrix = 0.5 * (matrix + matrix.T)
+        self.last_regularized_min_eigenvalue = float(values.min())
+        self.last_whitening_gain = float(np.linalg.norm(matrix, ord=2))
         self._record_matrix(matrix)
 
     def _matrix_transform(self, features: np.ndarray) -> np.ndarray:
@@ -264,6 +322,12 @@ class FeatureTransform:
             ),
             "transform_matrix_change_max": self.matrix_change_max,
             "transform_refreshes": float(self.matrix_refreshes),
+            "covariance_shrinkage": self.covariance_shrinkage,
+            "matrix_smoothing": self.matrix_smoothing,
+            "covariance_min_eigenvalue": self.last_covariance_min_eigenvalue,
+            "covariance_max_eigenvalue": self.last_covariance_max_eigenvalue,
+            "regularized_min_eigenvalue": self.last_regularized_min_eigenvalue,
+            "whitening_gain": self.last_whitening_gain,
             "active_fraction": self.last_active_fraction,
             "bounded_max_abs": self.last_output_max_abs,
         }

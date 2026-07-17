@@ -1,5 +1,7 @@
 # 远程一键运行完整教程
 
+> **历史证据，禁止按本文旧命令执行。** 旧版 venv/tmux/nohup 工作流已被生产根因修复流程取代。请只执行 [`PRODUCTION_ROOT_CAUSE_FIX_AND_CLOUD_RUN_ZH.md`](PRODUCTION_ROOT_CAUSE_FIX_AND_CLOUD_RUN_ZH.md) 中的前台、仓库内、`/usr/bin/python3` 命令。
+
 本教程假设你不熟悉 Linux、Git、Python venv 或 tmux。命令中的尖括号内容必须替换；不要把密码、token、真实服务器 IP 写进仓库。当前项目使用 CPU，不使用 GPU 训练。
 
 ## 1. 从 Windows 登录服务器

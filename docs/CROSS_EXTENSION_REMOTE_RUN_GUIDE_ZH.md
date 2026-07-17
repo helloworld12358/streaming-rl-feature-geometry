@@ -1,5 +1,7 @@
 # Cross-extension 云端正式运行指南
 
+> **已被替代。** 当前正式运行必须先做 compact storage pilot 和 cgroup/disk preflight，并在前台使用 `tee`；禁止 tmux/nohup/venv。唯一权威版本是 [`PRODUCTION_ROOT_CAUSE_FIX_AND_CLOUD_RUN_ZH.md`](PRODUCTION_ROOT_CAUSE_FIX_AND_CLOUD_RUN_ZH.md)。下文保留为历史证据。
+
 ## 最简单运行步骤
 
 本指南假设云平台已有仓库、Python 环境、`git`、`tmux`，且上一轮实验曾成功运行。先确认云端仓库没有未提交修改；不要覆盖或清理未知文件。

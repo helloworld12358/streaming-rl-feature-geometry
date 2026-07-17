@@ -24,6 +24,7 @@ from .cross_experiment import (
     validate_cross_results,
 )
 from .experiment import git_value, write_json
+from .production_runtime import contained_path, repository_root
 
 
 ANALYSIS_FILENAMES = {
@@ -38,9 +39,93 @@ ANALYSIS_FILENAMES = {
     "config.json",
     "manifest.json",
     "analysis_manifest.json",
+    "production_validation_violations.csv",
+    "production_validation_violations.json",
+    "trace_partition_inventory.json",
+    "storage_inventory.json",
     "RESULTS_SUMMARY_ZH.md",
     "remote_launcher.log",
 }
+
+
+class ProductionValidationError(AssertionError):
+    """Production validation failure with a persisted machine-readable report."""
+
+
+def _validation_violations(
+    root: Path,
+    config: dict[str, Any],
+    summaries: pd.DataFrame,
+    finite_columns: list[str],
+) -> list[dict[str, Any]]:
+    threshold = float(config.get("extreme_finite_limit", 1e12))
+    stage = str(config.get("experiment_stage", "fixed"))
+    violations: list[dict[str, Any]] = []
+    for summary_index, row in summaries.iterrows():
+        for metric in finite_columns:
+            if metric not in summaries:
+                violations.append(
+                    {
+                        "stage": stage,
+                        "environment": row.get("environment"),
+                        "condition": row.get("condition"),
+                        "seed": row.get("seed"),
+                        "candidate_alpha": row.get("candidate_alpha"),
+                        "metric": metric,
+                        "value": None,
+                        "threshold": threshold,
+                        "run_directory": row.get("run_dir"),
+                        "summary_row": int(summary_index),
+                        "first_offending_interaction": None,
+                        "classification": "missing_required_metric",
+                    }
+                )
+                continue
+            value = float(row[metric])
+            classification = None
+            if not np.isfinite(value):
+                classification = "non_finite_required_metric"
+            elif abs(value) > threshold:
+                classification = "finite_extreme_required_metric"
+            if classification is None:
+                continue
+            first_interaction = None
+            run_directory = Path(str(row.get("run_dir", "")))
+            validity_path = run_directory / "runtime_validity.json"
+            if validity_path.is_file():
+                try:
+                    validity = json.loads(validity_path.read_text(encoding="utf-8"))
+                    first_interaction = (validity.get("first_failure") or {}).get(
+                        "interaction_index"
+                    )
+                except (OSError, ValueError):
+                    first_interaction = None
+            violations.append(
+                {
+                    "stage": stage,
+                    "environment": row.get("environment"),
+                    "condition": row.get("condition"),
+                    "seed": int(row.get("seed")),
+                    "candidate_alpha": row.get("candidate_alpha"),
+                    "metric": metric,
+                    "value": value,
+                    "threshold": threshold,
+                    "run_directory": str(row.get("run_dir", "")),
+                    "summary_row": int(summary_index),
+                    "first_offending_interaction": first_interaction,
+                    "classification": classification,
+                }
+            )
+    violations.sort(
+        key=lambda item: abs(float(item["value"])) if item["value"] is not None else float("inf"),
+        reverse=True,
+    )
+    return violations
+
+
+def _write_validation_violations(root: Path, violations: list[dict[str, Any]]) -> None:
+    write_json(root / "production_validation_violations.json", violations)
+    pd.DataFrame(violations).to_csv(root / "production_validation_violations.csv", index=False)
 
 
 def sha256_file(path: Path) -> str:
@@ -109,6 +194,8 @@ def aggregate_and_validate(
 
     config = load_cross_config(config_path)
     root = Path(run_dir)
+    if config.get("enforce_repository_containment", False):
+        root = contained_path(root, repository_root(), label="production_result_root")
     aggregate_cross(root, config)
     validation = validate_cross_results(root, config)
     summaries = pd.read_csv(root / "aggregate_summary.csv")
@@ -122,12 +209,21 @@ def aggregate_and_validate(
         "max_control_update_norm",
         "final_parameter_norm",
     ]
-    values = summaries[finite_columns].to_numpy(dtype=float)
-    if not np.isfinite(values).all():
-        raise AssertionError("NaN/Inf in required production metrics")
-    extreme_limit = float(config.get("extreme_finite_limit", 1e12))
-    if (np.abs(values) > extreme_limit).any():
-        raise AssertionError(f"required metric exceeds extreme_finite_limit={extreme_limit:g}")
+    violations = _validation_violations(root, config, summaries, finite_columns)
+    _write_validation_violations(root, violations)
+    if violations:
+        preview = "\n".join(
+            f"- {item['stage']} {item['environment']}/{item['condition']} "
+            f"seed={item['seed']} alpha={item['candidate_alpha']} "
+            f"{item['metric']}={item['value']} threshold={item['threshold']} "
+            f"run={item['run_directory']} first_interaction={item['first_offending_interaction']}"
+            for item in violations[:10]
+        )
+        raise ProductionValidationError(
+            f"{len(violations)} production metric violation(s); complete reports: "
+            f"{root / 'production_validation_violations.json'} and "
+            f"{root / 'production_validation_violations.csv'}\n{preview}"
+        )
     if expected_stage == "lr_eval":
         if selected_learning_rates is None:
             raise ValueError("lr_eval aggregation requires selected_learning_rates.csv")
@@ -203,11 +299,24 @@ def package_suite(
     if not suite.is_dir():
         raise FileNotFoundError(f"suite directory does not exist: {suite}")
     destination = Path(output_dir).resolve() if output_dir else suite.parent / "packages"
+    try:
+        repository = repository_root(suite)
+    except RuntimeError:
+        repository = None
+    if repository is not None:
+        contained_path(suite, repository, label="suite_dir")
+        destination = contained_path(destination, repository, label="package_output_dir")
     destination.mkdir(parents=True, exist_ok=True)
     stem = f"cross-extension-{run_name}"
     full = destination / f"{stem}-full.tar.gz"
     analysis = destination / f"{stem}-analysis-core.tar.gz"
-    with tempfile.TemporaryDirectory(prefix="cross-extension-package-") as temporary:
+    temporary_parent = (
+        (repository / ".runtime" / "tmp") if repository is not None else suite.parent
+    )
+    temporary_parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(
+        prefix="cross-extension-package-", dir=temporary_parent
+    ) as temporary:
         temporary_root = Path(temporary)
         temporary_full = temporary_root / full.name
         temporary_analysis = temporary_root / analysis.name
