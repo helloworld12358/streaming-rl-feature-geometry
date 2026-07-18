@@ -10,6 +10,20 @@
 
 当前源码没有使用 SciPy，也不需要 torch、TensorFlow、JAX、CUDA 包、Ray、W&B 或 MLflow。项目没有外部数据集、预训练模型或模型权重。
 
+## 发布前 clean-install 验证
+
+每次部署变更在新的临时 venv 中验证 requirements、editable install、`pip check` 和 pytest；这个 venv 只用于证明依赖声明完整，不改变目标云端正式运行必须使用 `/usr/bin/python3` 的约束。Linux 示例：
+
+```bash
+python3 -m venv .runtime/release-clean-env
+.runtime/release-clean-env/bin/python -m pip install -r requirements.txt -r requirements-dev.txt
+.runtime/release-clean-env/bin/python -m pip install --no-build-isolation --no-deps -e .
+.runtime/release-clean-env/bin/python -m pip check
+.runtime/release-clean-env/bin/python -m pytest -q
+```
+
+`.runtime/` 已被 Git 忽略，不提交环境或 cache。
+
 ## 联网 Linux 服务器
 
 在仓库根目录执行：
@@ -47,6 +61,8 @@ bash scripts/bootstrap_remote.sh \
   --workers <WORKERS> \
   --run-name bootstrap-<COMMIT_SHA>
 ```
+
+完整 one-click 入口也接受 `--wheelhouse "$PWD/wheelhouse"`，并把它原样交给 bootstrap；无需先联网安装后再启动正式流程。
 
 此路径使用 `--no-index --find-links`，运行时不会访问网络。wheelhouse 不提交 Git。
 

@@ -34,7 +34,7 @@
 
 完整历史失败集合按原正式 horizon 重跑 13 cases：T-maze gaussian seeds 4/8/13/14，Ringworld gaussian 9/10/15，Two-loop gaussian 0/1/2/7/10，hidden-velocity whitened 1。结果为 13/13 passed、0 failed；interactions 范围 200,000–260,000，跨 case 最大 control update `2.076655225938364`、最大最终 parameter norm `7.321885228058665`、最大 feature squared norm `551.999669233319`，NaN/Inf/divergence 总数均为 0。没有删 seed、缩短 horizon、提高 `1e12` 阈值或加入 clipping。
 
-最终本地全套为 112 tests passed。生产 smoke 覆盖 5 environments × 7 required conditions × 2 seeds，共 70/70 valid；最大 control update `0.652002648331488`、最大最终 parameter norm `14.5456764908534`，NaN/Inf/divergence 均为 0。smoke 生成 70 个 strided/decision partitions 和 29 张图，不生成重复的 `aggregate_steps.csv`、`aggregate_updates.csv` 或 `aggregate_decisions.csv`。这些是实现与数值有效性证据，不是 4200-run 科学结论。
+生产根因修复 checkpoint 当时的本地全套为 112 tests passed；2026-07-18 部署刷新加入检查后为 124 tests passed。生产 smoke 覆盖 5 environments × 7 required conditions × 2 seeds，共 70/70 valid；最大 control update `0.652002648331488`、最大最终 parameter norm `14.5456764908534`，NaN/Inf/divergence 均为 0。smoke 生成 70 个 strided/decision partitions 和 29 张图，不生成重复的 `aggregate_steps.csv`、`aggregate_updates.csv` 或 `aggregate_decisions.csv`。这些是实现与数值有效性证据，不是 4200-run 科学结论。
 
 ## 3. compact v2 输出结构
 
@@ -66,7 +66,7 @@ resume 只复用同时满足以下条件的 run：
 - config hash、Git commit、result schema version、environment/condition/seed/candidate alpha 一致；
 - required production metrics finite 且未超过原始 `1e12` 阈值。
 
-invalid、failed 或 interrupted run 在重跑前移入同一 suite 内的 `failed_attempts/.../<UTC timestamp>/`；原证据不覆盖。使用 `--resume` 跳过严格有效的 run；使用 `--retry-invalid` 保留并重跑 invalid/failed/interrupted run。
+普通 `--resume` 跳过严格有效的 run。对 `lr_tune`，身份、config hash、commit 和 schema 均匹配的 invalid candidate 也作为“已完成的无效调优尝试”复用；它没有有效 summary、不能参与 alpha 选择，但不会无限重跑。`--retry-invalid` 才会先把旧 evidence 移入同一 suite 的 `failed_attempts/.../<UTC timestamp>/`，再明确重跑。fixed、lr_eval、norm_scaled 中的 invalid 继续使阶段 fail closed。
 
 ## 5. 依赖与 Matplotlib
 
@@ -85,6 +85,20 @@ invalid、failed 或 interrupted run 在重跑前移入同一 suite 内的 `fail
 ## 7. 云端命令（分批复制）
 
 以下每批都从固定仓库路径开始。所有命令在前台运行，不使用 nohup、setsid、tmux、screen、scheduler 或后台 `&`。
+
+如果希望把依赖检查、全部 tests、production smoke、storage pilot、preflight、四个正式阶段、聚合和打包合并为一条前台命令，请使用：
+
+```bash
+RL_RUN_CONTEXT=remote PYTHON_BIN=/usr/bin/python3 \
+bash scripts/remote_one_click.sh \
+  --allow-full-run \
+  --workers 16 \
+  --run-name production-<COMMIT_SHA>-<UTC_TIMESTAMP> \
+  --expected-branch <BRANCH> \
+  --expected-commit <COMMIT_SHA>
+```
+
+先增加 `--dry-run` 检查完整命令展开；dry-run 不安装依赖、不创建正式结果、不启动 remote full。分批诊断或手工恢复时再使用下面 A–H。
 
 ### A. 拉取修复分支并核对 commit
 

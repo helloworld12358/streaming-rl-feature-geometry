@@ -12,6 +12,7 @@ STORAGE_REPORT=""
 EXPECTED_BRANCH="codex/fix-streaming-rl-production-root-causes"
 EXPECTED_COMMIT=""
 ALLOW_FULL=0
+DRY_RUN=0
 
 usage() {
   cat <<'EOF'
@@ -19,7 +20,7 @@ Usage: RL_RUN_CONTEXT=remote bash scripts/run_cross_extension_remote.sh \
   --stage fixed-full|lr-tune|lr-eval|norm-scaled|all \
   --allow-full-run --run-name NAME --storage-report PATH \
   --expected-commit SHA [--workers N] [--output-root DIR] \
-  [--resume] [--retry-invalid] [--selected-learning-rates PATH]
+  [--resume] [--retry-invalid] [--selected-learning-rates PATH] [--dry-run]
 EOF
 }
 
@@ -36,6 +37,7 @@ while [[ $# -gt 0 ]]; do
     --expected-branch) EXPECTED_BRANCH="$2"; shift 2 ;;
     --expected-commit) EXPECTED_COMMIT="$2"; shift 2 ;;
     --allow-full-run) ALLOW_FULL=1; shift ;;
+    --dry-run) DRY_RUN=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -49,22 +51,55 @@ if [[ -z "$RUN_NAME" || ! "$RUN_NAME" =~ ^[A-Za-z0-9._-]+$ ]]; then
   echo "--run-name is required and must be filesystem-safe" >&2
   exit 2
 fi
-if [[ -z "$STORAGE_REPORT" || -z "$EXPECTED_COMMIT" ]]; then
+if [[ "$DRY_RUN" -eq 0 && ( -z "$STORAGE_REPORT" || -z "$EXPECTED_COMMIT" ) ]]; then
   echo "--storage-report and --expected-commit are required" >&2
   exit 2
 fi
 
+config_for_stage() {
+  case "$1" in
+    fixed-full) echo "configs/cross_extension_fixed_full.json" ;;
+    lr-tune) echo "configs/cross_extension_lr_tune_full.json" ;;
+    lr-eval) echo "configs/cross_extension_lr_eval_full.json" ;;
+    norm-scaled) echo "configs/cross_extension_norm_scaled_full.json" ;;
+  esac
+}
+
 source "$(dirname "$0")/remote_common.sh"
 remote_repo_root >/dev/null
-remote_prepare_repo_paths
 remote_export_resources
 remote_require_full_gates "$ALLOW_FULL"
 remote_validate_workers "$WORKERS"
 PYTHON_BIN="${PYTHON_BIN:-/usr/bin/python3}"
-[[ "$PYTHON_BIN" == "/usr/bin/python3" ]] || {
+[[ "$DRY_RUN" -eq 1 || "$PYTHON_BIN" == "/usr/bin/python3" ]] || {
   echo "Formal execution requires /usr/bin/python3; received $PYTHON_BIN" >&2
   exit 2
 }
+if [[ "$DRY_RUN" -eq 1 ]]; then
+  if [[ "$STAGE" == "all" ]]; then
+    DRY_STAGES=(fixed-full lr-tune lr-eval norm-scaled)
+  else
+    DRY_STAGES=("$STAGE")
+  fi
+  for current_stage in "${DRY_STAGES[@]}"; do
+    config="$(config_for_stage "$current_stage")"
+    args=(
+      scripts/run_cross_experiment.py --config "$config" --allow-full-run
+      --workers "$WORKERS" --output-dir "$OUTPUT_ROOT/$RUN_NAME" --run-name "$current_stage"
+    )
+    [[ "$RESUME" -eq 1 ]] && args+=(--resume)
+    [[ "$RETRY_INVALID" -eq 1 ]] && args+=(--retry-invalid)
+    if [[ "$current_stage" == "lr-eval" ]]; then
+      selected="${SELECTED:-$OUTPUT_ROOT/$RUN_NAME/lr-tune/selected_learning_rates.csv}"
+      args+=(--selected-learning-rates "$selected")
+    fi
+    printf -v command '%q ' "$PYTHON_BIN" "${args[@]}"
+    echo "DRY_RUN_STAGE=$current_stage COMMAND=RL_RUN_CONTEXT=remote $command"
+  done
+  echo "DRY_RUN_ONLY=true"
+  exit 0
+fi
+remote_prepare_repo_paths
 remote_print_inventory
 
 STORAGE_REPORT="$(realpath -m "$STORAGE_REPORT")"
@@ -103,15 +138,6 @@ mkdir -p "$OUTPUT_ROOT" "$LOG_ROOT" "$ARTIFACT_ROOT"
 SUITE_DIR="$OUTPUT_ROOT/$RUN_NAME"
 SELECTED_DEFAULT="$SUITE_DIR/lr-tune/selected_learning_rates.csv"
 [[ -z "$SELECTED" ]] && SELECTED="$SELECTED_DEFAULT"
-
-config_for_stage() {
-  case "$1" in
-    fixed-full) echo "configs/cross_extension_fixed_full.json" ;;
-    lr-tune) echo "configs/cross_extension_lr_tune_full.json" ;;
-    lr-eval) echo "configs/cross_extension_lr_eval_full.json" ;;
-    norm-scaled) echo "configs/cross_extension_norm_scaled_full.json" ;;
-  esac
-}
 
 write_stage_status() {
   local status_file="$1"

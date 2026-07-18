@@ -6,9 +6,10 @@ WORKERS="2"
 RUN_NAME="bootstrap-$(date -u +%Y%m%dT%H%M%SZ)"
 WHEELHOUSE=""
 SKIP_SMOKE=0
+DRY_RUN=0
 
 usage() {
-  echo "Usage: $0 [--python /usr/bin/python3] [--workers N] [--run-name NAME] [--wheelhouse DIR] [--skip-smoke]"
+  echo "Usage: $0 [--python /usr/bin/python3] [--workers N] [--run-name NAME] [--wheelhouse DIR] [--skip-smoke] [--dry-run]"
 }
 
 while [[ $# -gt 0 ]]; do
@@ -18,6 +19,7 @@ while [[ $# -gt 0 ]]; do
     --run-name) RUN_NAME="$2"; shift 2 ;;
     --wheelhouse) WHEELHOUSE="$2"; shift 2 ;;
     --skip-smoke) SKIP_SMOKE=1; shift ;;
+    --dry-run) DRY_RUN=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -25,7 +27,6 @@ done
 
 source "$(dirname "$0")/remote_common.sh"
 remote_repo_root >/dev/null
-remote_prepare_repo_paths
 remote_export_resources
 remote_validate_workers "$WORKERS"
 command -v git >/dev/null
@@ -34,6 +35,25 @@ command -v git >/dev/null
   exit 2
 }
 command -v "$PYTHON_BIN" >/dev/null
+if [[ "$DRY_RUN" -eq 1 ]]; then
+  PIP_OPTIONS=()
+  [[ -z "$WHEELHOUSE" ]] || PIP_OPTIONS=(--no-index --find-links "$WHEELHOUSE")
+  COMMANDS=(
+    "$PYTHON_BIN -m pip install ${PIP_OPTIONS[*]} -r requirements.txt -r requirements-dev.txt"
+    "$PYTHON_BIN -m pip install ${PIP_OPTIONS[*]} --no-build-isolation --no-deps -e ."
+    "$PYTHON_BIN -m pip check"
+    "$PYTHON_BIN -m pytest -q"
+  )
+  [[ "$SKIP_SMOKE" -eq 1 ]] || COMMANDS+=(
+    "$PYTHON_BIN scripts/run_cross_experiment.py --config configs/cross_extension_smoke.json --workers $WORKERS --output-dir results/bootstrap_smoke --run-name $RUN_NAME"
+  )
+  for command in "${COMMANDS[@]}"; do
+    echo "DRY_RUN_COMMAND=$command"
+  done
+  echo "DRY_RUN_ONLY=true"
+  exit 0
+fi
+remote_prepare_repo_paths
 "$PYTHON_BIN" - <<'PY'
 import sys
 if sys.version_info < (3, 10):

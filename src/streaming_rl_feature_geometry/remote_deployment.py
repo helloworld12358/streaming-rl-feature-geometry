@@ -23,7 +23,12 @@ from typing import Any
 import pandas as pd
 
 from .alpha_tuning import candidate_alphas
-from .cross_experiment import _completed_run, aggregate_cross, validate_cross_results
+from .cross_experiment import (
+    _completed_invalid_tuning_run,
+    _completed_run,
+    aggregate_cross,
+    validate_cross_results,
+)
 from .experiment import aggregate, config_hash, dependency_versions, validate_results
 
 
@@ -167,6 +172,40 @@ def expected_run_directories(
     return records
 
 
+def _expected_tuning_attempts(
+    root: Path, config: dict[str, Any]
+) -> dict[Path, tuple[tuple[str, str, int], dict[str, float]]]:
+    """Return config-derived identities/options for strict invalid-attempt checks."""
+
+    attempts: dict[Path, tuple[tuple[str, str, int], dict[str, float]]] = {}
+    if experiment_kind(config) != "cross" or config.get("experiment_stage") != "lr_tune":
+        return attempts
+    for environment, specification in config["environments"].items():
+        base = float(specification.get("control_alpha", config["control_alpha"]))
+        alphas = candidate_alphas(
+            base, list(map(float, config["alpha_tuning"]["multipliers"]))
+        )
+        for condition in specification["conditions"]:
+            for alpha, multiplier in alphas:
+                for seed in selected_seeds(config):
+                    run_dir = (
+                        root
+                        / "runs"
+                        / environment
+                        / condition
+                        / _alpha_path(alpha)
+                        / f"seed_{seed:03d}"
+                    )
+                    attempts[run_dir] = (
+                        (str(environment), str(condition), int(seed)),
+                        {
+                            "candidate_alpha": float(alpha),
+                            "base_alpha_multiplier": float(multiplier),
+                        },
+                    )
+    return attempts
+
+
 def inspect_run(root: str | Path, config: dict[str, Any] | None = None) -> dict[str, Any]:
     root = Path(root)
     if config is None:
@@ -174,21 +213,38 @@ def inspect_run(root: str | Path, config: dict[str, Any] | None = None) -> dict[
     missing: list[str] = []
     failed: list[str] = []
     invalid: list[str] = []
+    accepted_invalid_tuning: list[str] = []
     interrupted: list[str] = []
     completed: list[str] = []
     kind = experiment_kind(config)
-    for label, run_dir in expected_run_directories(root, config):
+    expected_directories = expected_run_directories(root, config)
+    expected_tuning = _expected_tuning_attempts(root, config)
+    for label, run_dir in expected_directories:
         manifest_path = run_dir / "manifest.json"
         summary_path = run_dir / "summary.csv"
-        if not manifest_path.is_file() or not summary_path.is_file():
+        if not manifest_path.is_file():
             missing.append(label)
             continue
         try:
             manifest = read_json(manifest_path)
+        except (OSError, ValueError) as error:
+            failed.append(f"{label}:unreadable-manifest:{type(error).__name__}")
+            continue
+        if not summary_path.is_file():
+            if kind == "cross" and config.get("experiment_stage") == "lr_tune":
+                expected = expected_tuning.get(run_dir)
+                if expected is not None and _completed_invalid_tuning_run(
+                    run_dir, config, expected[0], expected[1]
+                ):
+                    accepted_invalid_tuning.append(label)
+                    continue
+            missing.append(label)
+            continue
+        try:
             with summary_path.open(newline="", encoding="utf-8") as handle:
                 rows = list(csv.DictReader(handle))
         except (OSError, ValueError, csv.Error) as error:
-            failed.append(f"{label}:unreadable:{type(error).__name__}")
+            failed.append(f"{label}:unreadable-summary:{type(error).__name__}")
             continue
         status = rows[0].get("run_status") if len(rows) == 1 else "invalid-summary"
         scientifically_valid = (
@@ -207,8 +263,10 @@ def inspect_run(root: str | Path, config: dict[str, Any] | None = None) -> dict[
             )
     return {
         "result_dir": str(root.resolve()),
-        "expected_runs": len(missing) + len(failed) + len(completed),
+        "expected_runs": len(expected_directories),
         "completed_runs": len(completed),
+        "completed_attempts": len(completed) + len(accepted_invalid_tuning),
+        "accepted_invalid_tuning_attempts": accepted_invalid_tuning,
         "missing_runs": missing,
         "failed_runs": failed + invalid + interrupted,
         "invalid_runs": invalid,
@@ -216,6 +274,7 @@ def inspect_run(root: str | Path, config: dict[str, Any] | None = None) -> dict[
         "pending_runs": len(missing),
         "failed_count": len(failed),
         "invalid_count": len(invalid),
+        "accepted_invalid_tuning_count": len(accepted_invalid_tuning),
         "interrupted_count": len(interrupted),
         "completed_count": len(completed),
         "ok": not missing and not failed and not invalid and not interrupted,

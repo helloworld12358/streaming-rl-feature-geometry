@@ -78,7 +78,21 @@ The 20-seed full profiles are blocked unless both safeguards are present: `RL_RU
 
 ## 14. Remote command
 
-The authoritative remote procedure is [docs/PRODUCTION_ROOT_CAUSE_FIX_AND_CLOUD_RUN_ZH.md](docs/PRODUCTION_ROOT_CAUSE_FIX_AND_CLOUD_RUN_ZH.md). It uses `/usr/bin/python3`, foreground execution with `tee`, repository-contained temp/cache/results/logs/artifacts, a real storage pilot, cgroup-aware preflight, and both full-run gates. It never uses tmux, nohup, setsid, a scheduler, or a virtual environment.
+The authoritative remote procedure is [docs/PRODUCTION_ROOT_CAUSE_FIX_AND_CLOUD_RUN_ZH.md](docs/PRODUCTION_ROOT_CAUSE_FIX_AND_CLOUD_RUN_ZH.md). It uses `/usr/bin/python3`, foreground execution, repository-contained temp/cache/results/logs/artifacts, a real storage pilot, cgroup-aware preflight, and both full-run gates. It never uses nohup, setsid, a scheduler, or a virtual environment.
+
+After checking out the exact delivered commit on the Linux server, the foreground one-click entry runs dependency checks, the full test suite, production smoke, a storage pilot, preflight, all four production stages, aggregation, and packaging:
+
+```bash
+RL_RUN_CONTEXT=remote PYTHON_BIN=/usr/bin/python3 \
+bash scripts/remote_one_click.sh \
+  --allow-full-run \
+  --workers 16 \
+  --run-name production-<COMMIT_SHA>-<UTC_TIMESTAMP> \
+  --expected-branch <BRANCH> \
+  --expected-commit <COMMIT_SHA>
+```
+
+Add `--dry-run` to validate the complete command expansion without installing packages or starting formal experiments. The real command stays in the foreground; the terminal or cloud job must remain alive.
 
 ## 15. Results directories
 
@@ -138,11 +152,24 @@ The local 50-run storage calibration projected a 22.742 GiB peak for all 4200 fo
 
 ## 23. Remote deployment and reproducibility
 
-The canonical production Linux entries are `scripts/run_storage_pilot.sh` and `scripts/run_cross_extension_remote.sh`. Formal execution always requires both `RL_RUN_CONTEXT=remote` and `--allow-full-run`; local work is limited to tests, diagnostics, smoke, validation, and finite pilots. Results stay under `results/`, logs under `logs/`, packages under `artifacts/`, and cache/temp state under `.runtime/`.
+The canonical production Linux entries are `scripts/remote_one_click.sh`, `scripts/run_storage_pilot.sh`, and `scripts/run_cross_extension_remote.sh`. Formal execution always requires both `RL_RUN_CONTEXT=remote` and `--allow-full-run`; local work is limited to tests, diagnostics, smoke, validation, and finite pilots. Results stay under `results/`, logs under `logs/`, packages under `artifacts/`, and cache/temp state under `.runtime/`.
 
 - Production root-cause and cloud guide: `docs/PRODUCTION_ROOT_CAUSE_FIX_AND_CLOUD_RUN_ZH.md`
+- Foreground one-click guide and command sheet: `docs/REMOTE_ONE_CLICK_GUIDE_ZH.md`, `docs/REMOTE_COMMAND_CHEATSHEET_ZH.md`
 - Resource strategy: `docs/REMOTE_RESOURCE_STRATEGY.md`
 - Deployment reconciliation/report: `docs/REMOTE_DEPLOYMENT_RECONCILIATION.md`, `docs/REMOTE_DEPLOYMENT_REPORT.md`
 - Remote plans: `configs/remote_smoke.json`, `configs/remote_full_core.json`, `configs/remote_full_cross_environment.json`, `configs/remote_full_nonstationary.json`, `configs/remote_full_suite.json`
 
 Known deployment limitations: there is no CUDA backend and no background/scheduler integration. The required formal command runs in the current foreground shell, so the cloud terminal/container must remain alive.
+
+To execute the broader preregistered 9-batch suite (core, cross-environment, the 4200-run production extension, and non-stationary batches), first create a storage-pilot report, then run:
+
+```bash
+RL_RUN_CONTEXT=remote PYTHON_BIN=/usr/bin/python3 \
+bash scripts/run_remote_suite.sh --allow-full-run \
+  --workers <WORKERS> --run-name <RUN_NAME> \
+  --storage-report "$PWD/artifacts/storage_pilot/<PILOT_NAME>/storage_projection.json" \
+  --expected-branch <BRANCH> --expected-commit <COMMIT_SHA>
+```
+
+This is a larger alternative to the production-extension-only one-click command. It is guarded and has not been run locally.

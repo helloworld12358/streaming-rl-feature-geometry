@@ -1,5 +1,44 @@
 # Remote Deployment Reconciliation
 
+## 2026-07-18 当前 Goal 重新核对
+
+本轮从已完成并推送的生产根因修复继续执行，不重新 clone、不切换分支、不重写历史：
+
+- 起始分支：`codex/fix-streaming-rl-production-root-causes`；
+- 起始 commit：`a638ac62a6a9b1727f0dbe60bb1fdb9e0478da86`；
+- 起始 upstream：`origin/codex/fix-streaming-rl-production-root-causes`，ahead/behind=`0/0`；
+- origin：`https://github.com/helloworld12358/streaming-rl-feature-geometry.git`；
+- tracked worktree 与 index 均干净；唯一未跟踪目录 `paper_from_existing_results/` 保持原样且继续排除；
+- 当前基线全套：122 tests passed；本地核心 smoke 4/4；
+- 当前仓库保留 tracked 小型 pilot 汇总 `docs/pilot_results/hidden_velocity_informative_pilot_summary.csv`；历史大结果已按先前清理 Goal 从工作区移除，不能把文档中的旧路径误称为当前仍存在；
+- formal remote full 仍未在本地运行。
+
+本轮审计确认依赖入口、remote configs、CPU 资源策略、full-run guard 和大部分部署脚本仍存在，同时发现三个需要修复的部署一致性缺口：
+
+1. `remote_one_click.sh` 已退化为只转发参数的兼容包装器，不能执行文档承诺的 bootstrap、storage pilot 和最少点击流程；
+2. `run_remote_suite.sh --dry-run` 会把 `--dry-run` 传给尚未支持该参数的 production extension launcher；
+3. 通用 remote inspection 仍把 lr-tune 已完整保存的 invalid candidate 当成 missing run，与当前 `valid summaries + invalid attempts = expected attempts` 语义不一致。
+
+本轮采用的修复原则：
+
+- 保留最新 4200-run production extension、`/usr/bin/python3`、仓库内 runtime 路径、storage pilot 和前台运行约束；
+- one-click 在前台顺序执行 bootstrap、测试、production smoke、storage pilot、四阶段 formal、聚合与打包，并提供真正无副作用的 dry-run；
+- lr-tune inspection 接受严格匹配且证据完整的 invalid attempt，但非 lr-tune invalid、未知异常和缺失 evidence 仍 fail closed；
+- CPU process-level parallelism 继续作为唯一正式后端，GPU 只检测并记录，`gpu_backend_used=none`；
+- release 验证在新的临时 venv 中检查 requirements 与 tests；目标云端正式运行仍按已验证的 `/usr/bin/python3` 约束执行；
+- `gh` 在当前 Windows 环境不可用时不阻塞普通 Git push；Draft PR 仅在认证能力真实可用时创建，否则返回准确的手动 URL。
+
+## 2026-07-18 当前验证证据
+
+- 干净 Python 3.11.9 venv 完成 requirements、editable install 和 `pip check`；版本为 NumPy 2.4.6、pandas 3.0.3、Matplotlib 3.11.1、pytest 9.1.1；
+- 干净环境安装后的首次全套 `124 passed in 123.76s`；收紧 lr-tune invalid identity 后 focused suite `36 passed in 44.16s`，全部 Bash dry-run 与 9-batch 参数合约补齐后的最终全套 `124 passed in 96.47s`；
+- production extension smoke `70/70`、manifest=`ok`、CPU process-level、GPU backend=`none`；
+- 37 个 JSON config、14 个 shell 脚本的本地语法解析、compileall、`git diff --check`、敏感信息与大文件扫描均通过；
+- Windows 本机没有可用 Linux Bash/shellcheck；Ubuntu CI 已增加全部 shell 的 `bash -n`、one-click dry-run 和 9-batch suite dry-run，必须在 push 后核对；
+- 未在本地运行 formal remote full；`.runtime/` 和 smoke 结果保持 ignored；`paper_from_existing_results/` 仍未读取、未修改、未纳入任务 diff。
+
+本节是当前 Goal 的起始与决策记录；下面较早的 `codex/remote-deployment` 内容保留为历史，不代表当前 branch/commit 或当前测试计数。
+
 ## 起始状态
 
 - 本地仓库：`D:\download\GitHub\streaming-rl-feature-geometry`

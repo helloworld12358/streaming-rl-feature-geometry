@@ -2,6 +2,21 @@
 
 > Historical implementation record. The current production workflow is documented in [`PRODUCTION_ROOT_CAUSE_FIX_AND_CLOUD_RUN_ZH.md`](PRODUCTION_ROOT_CAUSE_FIX_AND_CLOUD_RUN_ZH.md); its `/usr/bin/python3`, foreground-only, repository-contained constraints supersede the earlier venv/background workflow below.
 
+## 2026-07-18 发布刷新
+
+本轮在 `codex/fix-streaming-rl-production-root-causes` 的已推送 checkpoint `a638ac62a6a9b1727f0dbe60bb1fdb9e0478da86` 上继续整理，没有重新 clone、切换历史或删除旧证据。当前 one-click 在前台依次执行 bootstrap、70-run production smoke、50-run storage pilot、4200-run 四阶段 production extension、聚合和打包；`--dry-run` 只展开命令，不安装依赖或启动正式实验。离线节点可把仓库内 wheelhouse 用 `--wheelhouse` 传入 one-click。
+
+本轮实际本地验证：
+
+- 新建仓库内忽略目录 `.runtime/release-clean-env-20260718-132842`，安装 requirements、editable package 成功，`pip check` 为 `No broken requirements found`；Python 3.11.9、NumPy 2.4.6、pandas 3.0.3、Matplotlib 3.11.1、pytest 9.1.1；
+- 干净环境安装后的首次全套 `124 passed in 123.76s`；收紧 lr-tune invalid identity 后的 focused suite `36 passed in 44.16s`，全部 Bash dry-run 与 9-batch 参数合约补齐后的最终全套 `124 passed in 96.47s`；
+- `configs/cross_extension_smoke.json` 实际完成并验证 `70/70`，manifest=`ok`，CPU process-level、4 workers、GPU backend=`none`；第一次未设置仓库内 runtime 环境变量的探测被 guard 正确拒绝，未启动实验；
+- 37 个 JSON config 全部解析；tree-sitter-bash 对 14 个 shell 脚本均无语法错误；`git diff --check`、compileall 和敏感信息扫描通过；tracked 文件中无 token、AWS key、private key、密码赋值或 IPv4 地址，无大于 5 MiB 文件；
+- 当前 Windows 没有可用 Linux Bash/shellcheck，所以真正的 `bash -n`、one-click dry-run 和 9-batch suite dry-run 已加入 Ubuntu CI，推送后以该 CI 结果为发布证据；
+- formal 4200-run remote full 未在本地执行。本地新增 smoke 位于被 `.gitignore` 排除的 `results/bootstrap_smoke/deployment-refresh-20260718`，不提交原始结果。
+
+`--workers` 是实际 CPU 进程数：扩大云实例核数但仍显式传入 `--workers 16` 时，程序仍只启动 16 个 worker。要利用新增核心，只需按 cgroup quota 调整该参数；GPU 型号和卡数不会改善当前线性 NumPy 工作负载。
+
 ## 实现范围
 
 部署层只编排既有严格 streaming、非深度、线性实验，不修改科研变量。正式 suite 包含：

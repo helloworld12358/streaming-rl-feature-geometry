@@ -7,6 +7,9 @@ RUN_NAME=""
 OUTPUT_ROOT="results/remote"
 STAGES=""
 SKIP_STAGES=()
+STORAGE_REPORT=""
+EXPECTED_BRANCH=""
+EXPECTED_COMMIT=""
 ALLOW_FULL=0
 DRY_RUN=0
 
@@ -15,7 +18,8 @@ usage() {
 Usage: RL_RUN_CONTEXT=remote bash scripts/run_remote_suite.sh --allow-full-run \
   --workers N --run-name NAME [--config PATH] [--output-root DIR] \
   [--stages core,cross_environment,production_extension,nonstationary] \
-  [--skip-stage ID] [--dry-run]
+  [--skip-stage ID] [--storage-report PATH] [--expected-branch BRANCH] \
+  [--expected-commit SHA] [--dry-run]
 EOF
 }
 
@@ -27,6 +31,9 @@ while [[ $# -gt 0 ]]; do
     --output-root) OUTPUT_ROOT="$2"; shift 2 ;;
     --stages) STAGES="$2"; shift 2 ;;
     --skip-stage) SKIP_STAGES+=("$2"); shift 2 ;;
+    --storage-report) STORAGE_REPORT="$2"; shift 2 ;;
+    --expected-branch) EXPECTED_BRANCH="$2"; shift 2 ;;
+    --expected-commit) EXPECTED_COMMIT="$2"; shift 2 ;;
     --allow-full-run) ALLOW_FULL=1; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -51,7 +58,7 @@ done
 [[ -n "$STAGES" || ${#SKIP_STAGES[@]} -eq 0 ]] || { echo "All stages were skipped." >&2; exit 2; }
 
 remote_repo_root
-PYTHON_BIN="${PYTHON_BIN:-python3}"
+PYTHON_BIN="${PYTHON_BIN:-/usr/bin/python3}"
 remote_export_resources
 remote_validate_workers "$WORKERS"
 PLAN_ARGS=(--config "$CONFIG" --tsv)
@@ -59,6 +66,20 @@ PLAN_ARGS=(--config "$CONFIG" --tsv)
 mapfile -t PLAN < <("$PYTHON_BIN" -m streaming_rl_feature_geometry.remote_deployment plan-suite "${PLAN_ARGS[@]}")
 SUITE_DIR="$OUTPUT_ROOT/$RUN_NAME"
 echo "SUITE_DIR=$SUITE_DIR BATCHES=${#PLAN[@]}"
+
+HAS_EXTENSION=0
+for line in "${PLAN[@]}"; do
+  line="${line%$'\r'}"
+  IFS=$'\t' read -r _ _ KIND _ _ _ <<<"$line"
+  [[ "$KIND" != "cross_extension" ]] || HAS_EXTENSION=1
+done
+if [[ "$DRY_RUN" -eq 0 && "$HAS_EXTENSION" -eq 1 ]]; then
+  [[ -n "$STORAGE_REPORT" && -n "$EXPECTED_COMMIT" ]] || {
+    echo "Production extension in full suite requires --storage-report and --expected-commit." >&2
+    exit 2
+  }
+  [[ -n "$EXPECTED_BRANCH" ]] || EXPECTED_BRANCH="$(git branch --show-current)"
+fi
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
   for line in "${PLAN[@]}"; do
@@ -97,7 +118,9 @@ for line in "${PLAN[@]}"; do
   if [[ "$KIND" == "cross_extension" ]]; then
     RL_RUN_CONTEXT=remote PYTHON_BIN="$PYTHON_BIN" bash scripts/run_cross_extension_remote.sh \
       --allow-full-run --stage "$EXTENSION_STAGE" --run-name "$SUBRUN" \
-      --output-root "$SUITE_DIR/$STAGE" --workers "$WORKERS" 2>&1 | tee "$LOG_FILE"
+      --output-root "$SUITE_DIR/$STAGE" --workers "$WORKERS" \
+      --storage-report "$STORAGE_REPORT" --expected-branch "$EXPECTED_BRANCH" \
+      --expected-commit "$EXPECTED_COMMIT" 2>&1 | tee "$LOG_FILE"
   else
     RL_RUN_CONTEXT=remote PYTHON_BIN="$PYTHON_BIN" bash scripts/run_remote_full.sh \
       --allow-full-run --config "$RUN_CONFIG" --workers "$WORKERS" \

@@ -19,6 +19,49 @@ jobs:
           cache: pip
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e ".[dev]"
+      - name: Validate remote Bash entrypoints
+        shell: bash
+        run: |
+          for script in scripts/*.sh; do
+            bash -n "$script"
+          done
+          PYTHON_BIN=/usr/bin/python3 \
+            bash scripts/bootstrap_remote.sh \
+              --workers 1 --run-name ci-bootstrap-dry-run --dry-run
+          PYTHON_BIN=/usr/bin/python3 \
+            bash scripts/run_storage_pilot.sh \
+              --workers 1 --run-name ci-storage-dry-run --dry-run
+          PYTHON_BIN=python \
+            bash scripts/run_remote_smoke.sh \
+              --workers 1 --run-name ci-smoke-dry-run --dry-run
+          PYTHON_BIN=python \
+            bash scripts/aggregate_remote.sh --suite-dir ci-placeholder --dry-run
+          PYTHON_BIN=python \
+            bash scripts/package_remote_results.sh --suite-dir ci-placeholder --dry-run
+          RL_RUN_CONTEXT=remote PYTHON_BIN=python \
+            bash scripts/aggregate_cross_extension_remote.sh \
+              --config configs/cross_extension_smoke.json \
+              --run-dir ci-placeholder --dry-run
+          RL_RUN_CONTEXT=remote PYTHON_BIN=python \
+            bash scripts/package_cross_extension_remote.sh \
+              --suite-dir ci-placeholder --run-name ci-placeholder --dry-run
+          RL_RUN_CONTEXT=remote PYTHON_BIN=/usr/bin/python3 \
+            bash scripts/remote_one_click.sh \
+              --allow-full-run \
+              --workers 1 \
+              --run-name ci-remote-dry-run \
+              --expected-branch ci \
+              --expected-commit "${{ github.sha }}" \
+              --dry-run
+          RL_RUN_CONTEXT=remote PYTHON_BIN=python \
+            bash scripts/run_remote_suite.sh \
+              --allow-full-run \
+              --workers 1 \
+              --run-name ci-suite-dry-run \
+              --dry-run
+          RL_RUN_CONTEXT=remote PYTHON_BIN=python WORKERS=1 \
+            bash scripts/run_remote.sh \
+              full_stationary ci-compat-dry-run --allow-full-run --dry-run
       - run: python -m pytest -q
       - name: Run smoke experiment
         run: >-

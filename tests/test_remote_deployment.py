@@ -1,9 +1,11 @@
 import json
 import tarfile
+from pathlib import Path
 
 import pandas as pd
 import pytest
 
+import streaming_rl_feature_geometry.remote_deployment as remote_deployment_module
 from streaming_rl_feature_geometry.experiment import _manifest_base
 from streaming_rl_feature_geometry.remote_deployment import (
     config_plan,
@@ -66,6 +68,65 @@ def test_missing_and_failed_seed_detection_is_explicit(tmp_path):
     assert not report["ok"]
 
 
+def test_lr_tune_inspection_counts_preserved_invalid_as_completed_attempt(
+    tmp_path, monkeypatch
+):
+    config = {
+        "profile": "lr-tune-unit",
+        "experiment_stage": "lr_tune",
+        "seeds": [100],
+        "control_alpha": 0.006,
+        "alpha_tuning": {"multipliers": [1.0, 2.0]},
+        "environments": {
+            "tmaze": {
+                "conditions": ["raw"],
+                "interactions": 16,
+            }
+        },
+    }
+    root = tmp_path / "lr-tune"
+    valid = root / "runs" / "tmaze" / "raw" / "alpha_0p006" / "seed_100"
+    invalid = root / "runs" / "tmaze" / "raw" / "alpha_0p012" / "seed_100"
+    _write_success(valid)
+    invalid.mkdir(parents=True)
+    (invalid / "manifest.json").write_text(
+        json.dumps(
+            {
+                "exit_status": "invalid",
+                "environment": "tmaze",
+                "condition": "raw",
+                "seed": 100,
+                "candidate_alpha": 0.012,
+                "base_alpha_multiplier": 2.0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(remote_deployment_module, "_completed_run", lambda *args: True)
+    def strict_invalid_probe(run_dir, received_config, identity, options):
+        assert run_dir == invalid
+        assert received_config is config
+        assert identity == ("tmaze", "raw", 100)
+        assert options == {
+            "candidate_alpha": 0.012,
+            "base_alpha_multiplier": 2.0,
+        }
+        return True
+
+    monkeypatch.setattr(
+        remote_deployment_module, "_completed_invalid_tuning_run", strict_invalid_probe
+    )
+    report = inspect_run(root, config)
+    assert report["expected_runs"] == 2
+    assert report["completed_runs"] == 1
+    assert report["completed_attempts"] == 2
+    assert report["accepted_invalid_tuning_count"] == 1
+    assert report["accepted_invalid_tuning_attempts"] == [
+        "tmaze/raw/alpha_0p012/seed_100"
+    ]
+    assert report["ok"]
+
+
 def test_remote_plans_reference_executable_configs():
     smoke = load_run_plan("configs/remote_smoke.json")
     suite = load_suite_plan("configs/remote_full_suite.json")
@@ -120,3 +181,46 @@ def test_run_manifest_records_resources_and_reproducibility_fields():
     assert manifest["interaction_budget"] == 16
     assert manifest["gpu_backend_used"] == "none"
     assert manifest["parallelism"] == "cpu-process"
+
+
+def test_remote_shell_entrypoints_have_consistent_dry_run_and_safety_contracts():
+    required = (
+        "bootstrap_remote.sh",
+        "run_remote_smoke.sh",
+        "run_remote_full.sh",
+        "run_remote_suite.sh",
+        "aggregate_remote.sh",
+        "package_remote_results.sh",
+        "remote_one_click.sh",
+        "run_cross_extension_remote.sh",
+    )
+    scripts = {
+        name: Path("scripts", name).read_text(encoding="utf-8") for name in required
+    }
+    assert all("set -euo pipefail" in text for text in scripts.values())
+    assert "--dry-run) DRY_RUN=1" in scripts["run_cross_extension_remote.sh"]
+    assert "DRY_RUN_ONLY=true" in scripts["run_cross_extension_remote.sh"]
+    assert "--dry-run" in scripts["run_remote_suite.sh"]
+    assert "--storage-report" in scripts["run_remote_suite.sh"]
+    assert "--expected-commit" in scripts["run_remote_suite.sh"]
+    assert "--dry-run) DRY_RUN=1" in scripts["bootstrap_remote.sh"]
+    one_click = scripts["remote_one_click.sh"]
+    for command in (
+        "scripts/bootstrap_remote.sh",
+        "scripts/run_storage_pilot.sh",
+        "scripts/run_cross_extension_remote.sh",
+    ):
+        assert command in one_click
+    assert "remote_require_full_gates" in one_click
+    assert "PYTHON_BIN=\"${PYTHON_BIN:-/usr/bin/python3}\"" in one_click
+    assert "nohup" not in one_click and "tmux" not in one_click
+    for name in (
+        "run_remote_smoke.sh",
+        "run_remote_full.sh",
+        "run_remote_suite.sh",
+        "aggregate_remote.sh",
+        "package_remote_results.sh",
+        "remote_one_click.sh",
+        "run_cross_extension_remote.sh",
+    ):
+        assert "--dry-run" in scripts[name]
