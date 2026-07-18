@@ -4,12 +4,17 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import asdict, dataclass
+import json
 from pathlib import Path
 from typing import Any, Mapping
 
 import numpy as np
 
-from .experiment import write_json
+
+def write_json(path: Path, value: Any) -> None:
+    """Write validity evidence without importing either experiment runner."""
+
+    path.write_text(json.dumps(value, indent=2, sort_keys=True), encoding="utf-8")
 
 
 DEFAULT_EXTREME_FINITE_LIMIT = 1.0e12

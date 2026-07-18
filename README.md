@@ -76,6 +76,8 @@ The pilot uses seeds 0, 1, and 2, 20,000 interactions, and all registered condit
 
 The 20-seed full profiles are blocked unless both safeguards are present: `RL_RUN_CONTEXT=remote` and `--allow-full-run`. Hostname guesses and either safeguard alone are intentionally insufficient.
 
+Fixed nonlinear controller-state utilization adapters are registered in three guarded stages. Identity, residual 64-wide random Fourier features, and 8-tiling/512-entry tile coding are non-learnable, state-only additions to the existing linear controller input. The exact matrices, strict baseline reuse gate, lightweight `adapter_summary_v1` storage, local smoke, and remote commands are documented in [docs/UTILIZATION_ADAPTER_EXPERIMENT_GUIDE_ZH.md](docs/UTILIZATION_ADAPTER_EXPERIMENT_GUIDE_ZH.md). Formal execution remains CPU-only and remote-only; missing Stage A baseline evidence stops the launcher instead of triggering extra identity runs.
+
 ## 14. Remote command
 
 The authoritative remote procedure is [docs/PRODUCTION_ROOT_CAUSE_FIX_AND_CLOUD_RUN_ZH.md](docs/PRODUCTION_ROOT_CAUSE_FIX_AND_CLOUD_RUN_ZH.md). It uses `/usr/bin/python3`, foreground execution with `tee`, repository-contained temp/cache/results/logs/artifacts, a real storage pilot, cgroup-aware preflight, and both full-run gates. It never uses tmux, nohup, setsid, a scheduler, or a virtual environment.

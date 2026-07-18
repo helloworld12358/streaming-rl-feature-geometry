@@ -28,6 +28,8 @@ from .gvf import GVFUpdate, TraceGVFBank
 from .metrics import ReservoirSampler, cue_separation_metrics
 from .reporting import make_figures
 from .transforms import FeatureTransform, rep_metrics
+from .runtime_validation import RuntimeValidityError, RuntimeValidityTracker
+from .utilization_adapters import make_utilization_adapter, normalize_adapter_config
 
 CONDITIONS = (
     "observation_only",
@@ -119,6 +121,25 @@ def load_config(path: str | Path) -> dict[str, Any]:
     config.setdefault("accuracy_threshold", 0.8)
     config.setdefault("workers", 1)
     config.setdefault("nonstationary", False)
+    config.setdefault("controller_alpha_mode", "fixed")
+    config.setdefault(
+        "controller_alpha_norm",
+        {
+            "ema_beta": 0.01,
+            "epsilon": 1e-6,
+            "alpha_min": 1e-6,
+            "alpha_max_multiplier": 1.0,
+        },
+    )
+    config.setdefault("storage_schema", "legacy_csv")
+    config.setdefault("extreme_finite_limit", 1e12)
+    if config["controller_alpha_mode"] not in {"fixed", "norm_scaled"}:
+        raise ValueError("controller_alpha_mode must be fixed or norm_scaled")
+    if config["storage_schema"] not in {"legacy_csv", "adapter_summary_v1"}:
+        raise ValueError("core storage_schema must be legacy_csv or adapter_summary_v1")
+    config["utilization_adapter"] = normalize_adapter_config(
+        config.get("utilization_adapter")
+    )
     if config["nonstationary"]:
         for key in ("change_point", "corridor_length_after"):
             if key not in config:
@@ -131,13 +152,22 @@ def load_config(path: str | Path) -> dict[str, Any]:
 def controller_features(
     observation: np.ndarray, state: np.ndarray, condition: str, cue: int
 ) -> np.ndarray:
-    pieces = [observation]
+    del condition, cue
+    return np.concatenate((observation, state, np.ones(1, dtype=np.float64)))
+
+
+def controller_state(
+    trace: np.ndarray, transformed: np.ndarray, condition: str, cue: int
+) -> np.ndarray:
+    """Select the current controller state without exposing latent labels elsewhere."""
+
+    if condition == "observation_only":
+        return np.empty(0, dtype=np.float64)
     if condition == "oracle":
-        pieces.append(np.asarray([float(cue)]))
-    elif len(state):
-        pieces.append(state)
-    pieces.append(np.ones(1, dtype=np.float64))
-    return np.concatenate(pieces)
+        return np.asarray([float(cue)], dtype=np.float64)
+    if condition == "trace_only":
+        return trace.copy()
+    return transformed.copy()
 
 
 def diagnostic_state(
@@ -180,6 +210,10 @@ def _manifest_base(
         "gpu_detection": os.environ.get("RL_REMOTE_GPU_DETECTION", "not-recorded"),
         "gpu_backend_used": "none",
         "parallelism": "cpu-process",
+        "storage_schema": config.get("storage_schema", "legacy_csv"),
+        "controller_alpha_mode": config.get("controller_alpha_mode", "fixed"),
+        "utilization_adapter": normalize_adapter_config(config.get("utilization_adapter")),
+        "controller_input_definition": "observation_plus_adapted_controller_state_plus_bias_v1",
     }
 
 
@@ -196,7 +230,8 @@ def run_one(task: tuple[dict[str, Any], str, int, str]) -> dict[str, Any]:
     root = Path(root_string)
     run_dir = root / "runs" / condition / f"seed_{seed:03d}"
     run_dir.mkdir(parents=True, exist_ok=False)
-    (run_dir / "figures").mkdir()
+    if config.get("storage_schema", "legacy_csv") != "adapter_summary_v1":
+        (run_dir / "figures").mkdir()
     started = time.time()
     manifest = _manifest_base(config, condition, seed)
     manifest.update(
@@ -209,32 +244,70 @@ def run_one(task: tuple[dict[str, Any], str, int, str]) -> dict[str, Any]:
     write_json(run_dir / "manifest.json", manifest)
     write_json(run_dir / "config.json", config)
     try:
-        summary = _execute_run(config, condition, seed, run_dir, started)
+        summary = _execute_run(config, condition, seed, run_dir, started, manifest)
     except Exception as error:
+        invalid = isinstance(error, RuntimeValidityError)
         manifest.update(
             {
                 "end_time": datetime.now(timezone.utc).isoformat(),
-                "exit_status": "failed",
+                "exit_status": "invalid" if invalid else "failed",
+                "run_status": "invalid" if invalid else "failed",
+                "resume_eligible": False,
                 "error_type": type(error).__name__,
                 "error": str(error),
             }
         )
+        if invalid:
+            manifest["first_failure"] = vars(error.failure)
         write_json(run_dir / "manifest.json", manifest)
+        if (
+            config.get("storage_schema") == "adapter_summary_v1"
+            and not (run_dir / "runtime_validity.json").exists()
+        ):
+            write_json(
+                run_dir / "runtime_validity.json",
+                {
+                    "status": "failed",
+                    "resume_eligible": False,
+                    "error_type": type(error).__name__,
+                    "error": str(error),
+                },
+            )
+        (run_dir / "stdout.log").write_text(
+            f"failed condition={condition} seed={seed}\n{type(error).__name__}: {error}\n",
+            encoding="utf-8",
+        )
         raise
     manifest.update(
         {
             "end_time": datetime.now(timezone.utc).isoformat(),
             "exit_status": "ok",
+            "run_status": summary["run_status"],
+            "resume_eligible": True,
             "wall_seconds": summary["wall_seconds"],
         }
     )
+    for key in (
+        "adapter_version",
+        "adapter_name",
+        "adapter_scope",
+        "adapter_input_dim",
+        "adapter_block_dim",
+        "adapter_output_dim",
+        "adapter_seed",
+        "adapter_residual",
+        "adapter_fixed_hyperparameters",
+        "final_controller_dim",
+    ):
+        manifest[key] = summary[key]
     write_json(run_dir / "manifest.json", manifest)
     (run_dir / "stdout.log").write_text("completed\n", encoding="utf-8")
     return summary
 
 
 def _execute_run(
-    config: dict[str, Any], condition: str, seed: int, run_dir: Path, started: float
+    config: dict[str, Any], condition: str, seed: int, run_dir: Path, started: float,
+    manifest: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     env = ContinuingTMaze(config["corridor_length"], seed)
     observation = env.observation
@@ -246,7 +319,9 @@ def _execute_run(
         trace_dim=config["trace_dim"],
         bank=config["gvf_bank"],
     )
-    write_json(run_dir / "gvf_definitions.json", gvf.definition_records())
+    adapter_summary_storage = config.get("storage_schema", "legacy_csv") == "adapter_summary_v1"
+    if not adapter_summary_storage:
+        write_json(run_dir / "gvf_definitions.json", gvf.definition_records())
     transform = None
     if condition in PREDICTIVE_CONDITIONS:
         transform = FeatureTransform(
@@ -266,8 +341,21 @@ def _execute_run(
         if transform is not None
         else np.empty(0, dtype=np.float64)
     )
-    state = trace if condition == "trace_only" else transformed
-    features = controller_features(observation, state, condition, env.cue)
+    state = controller_state(trace, transformed, condition, env.cue)
+    adapter = make_utilization_adapter(
+        config.get("utilization_adapter"),
+        environment="tmaze",
+        run_seed=seed,
+        input_dim=len(state),
+    )
+    adapted_state = adapter.transform(state)
+    features = controller_features(observation, adapted_state, condition, env.cue)
+    adapter_metadata = adapter.metadata().as_dict()
+    adapter_metadata["final_controller_dim"] = len(features)
+    if manifest is not None:
+        manifest.update(adapter_metadata)
+        write_json(run_dir / "manifest.json", manifest)
+    norm = config.get("controller_alpha_norm", {})
     controller = SarsaLambda(
         2,
         len(features),
@@ -276,6 +364,12 @@ def _execute_run(
         gamma=config["gamma"],
         lam=config["lambda"],
         epsilon=config["epsilon"],
+        alpha_mode=config.get("controller_alpha_mode", "fixed"),
+        norm_ema_beta=float(norm.get("ema_beta", 0.01)),
+        norm_epsilon=float(norm.get("epsilon", 1e-6)),
+        alpha_min=float(norm.get("alpha_min", 1e-6)),
+        alpha_max=float(config["control_alpha"])
+        * float(norm.get("alpha_max_multiplier", 1.0)),
     )
     action = controller.act(features)
 
@@ -294,6 +388,14 @@ def _execute_run(
     gvf_norms: list[float] = []
     cumulative_reward = 0.0
     actual_change_point: int | None = None
+    tracker = RuntimeValidityTracker(
+        environment="tmaze",
+        condition=condition,
+        seed=seed,
+        candidate_alpha=None,
+        run_dir=run_dir,
+        extreme_finite_limit=float(config.get("extreme_finite_limit", 1e12)),
+    )
 
     for interaction in range(config["total_interactions"]):
         if config["nonstationary"] and interaction == config["change_point"]:
@@ -323,13 +425,58 @@ def _execute_run(
             if transform is not None
             else np.empty(0, dtype=np.float64)
         )
-        next_state = next_trace if condition == "trace_only" else next_transformed
-        next_features = controller_features(next_observation, next_state, condition, env.cue)
+        next_state = controller_state(next_trace, next_transformed, condition, env.cue)
+        try:
+            next_adapted_state = adapter.transform(next_state)
+            next_features = controller_features(
+                next_observation, next_adapted_state, condition, env.cue
+            )
+        except (FloatingPointError, OverflowError, np.linalg.LinAlgError) as error:
+            tracker.record_exception(
+                interaction,
+                error,
+                feature_norm=float(np.linalg.norm(features)),
+                parameter_norm=float(np.linalg.norm(controller.w)),
+                transform_state=(transform.state_metrics() if transform is not None else {}),
+            )
+            raise AssertionError("unreachable after fail-closed adapter exception")
         if not np.isfinite(next_features).all():
             raise FloatingPointError("non-finite controller features")
-        next_action = controller.act(next_features)
-        control_error, update_norm, parameter_norm = controller.update(
-            features, action, reward, next_features, next_action
+        try:
+            next_action = controller.act(next_features)
+            control_error, update_norm, parameter_norm = controller.update(
+                features, action, reward, next_features, next_action
+            )
+        except (FloatingPointError, OverflowError, np.linalg.LinAlgError) as error:
+            tracker.record_exception(
+                interaction,
+                error,
+                feature_norm=float(np.linalg.norm(features)),
+                parameter_norm=float(np.linalg.norm(controller.w)),
+                transform_state=(transform.state_metrics() if transform is not None else {}),
+            )
+            raise AssertionError("unreachable after fail-closed controller exception")
+        tracker.observe(
+            interaction,
+            {
+                "controller_features": features,
+                "next_controller_features": next_features,
+                "adapted_controller_state": adapted_state,
+                "next_adapted_controller_state": next_adapted_state,
+                "predictive_parameters": gvf.w,
+                "controller_parameters": controller.w,
+                "controller_eligibility_trace": controller.e,
+                "predictive_trace_state": gvf.trace_state,
+                "control_td_error": control_error,
+                "control_update_norm": update_norm,
+                "predictor_update_norm": gvf_update.update_norm,
+                "reward": reward,
+                "effective_controller_alpha": controller.last_effective_alpha,
+            },
+            feature_norm=float(np.linalg.norm(features)),
+            parameter_norm=parameter_norm,
+            update_norm=update_norm,
+            transform_state=(transform.state_metrics() if transform is not None else {}),
         )
 
         cumulative_reward += reward
@@ -395,22 +542,25 @@ def _execute_run(
         predictions = next_predictions
         trace = next_trace
         transformed = next_transformed
+        adapted_state = next_adapted_state
         features = next_features
         action = next_action
 
     trials = pd.DataFrame(trial_rows)
     predictions_frame = pd.DataFrame(prediction_rows)
     updates_frame = pd.DataFrame(update_rows)
-    trials.to_csv(run_dir / "per_trial_metrics.csv", index=False)
-    predictions_frame.to_csv(run_dir / "prediction_metrics.csv", index=False)
-    updates_frame.to_csv(run_dir / "update_metrics.csv", index=False)
+    if not adapter_summary_storage:
+        trials.to_csv(run_dir / "per_trial_metrics.csv", index=False)
+        predictions_frame.to_csv(run_dir / "prediction_metrics.csv", index=False)
+        updates_frame.to_csv(run_dir / "update_metrics.csv", index=False)
 
     samples, sample_cues, sample_groups = representation_sample.arrays(state_dim)
     representation = rep_metrics(samples)
     representation.update({"condition": condition, "seed": seed})
     if transform is not None:
         representation.update(transform.state_metrics())
-    pd.DataFrame([representation]).to_csv(run_dir / "representation_metrics.csv", index=False)
+    if not adapter_summary_storage:
+        pd.DataFrame([representation]).to_csv(run_dir / "representation_metrics.csv", index=False)
 
     hidden_rows = []
     junction_features = np.empty((0, state_dim), dtype=np.float64)
@@ -431,13 +581,14 @@ def _execute_run(
         hidden_rows.append(row)
         if position == "junction":
             junction_features, junction_cues = position_features, position_cues
-    pd.DataFrame(hidden_rows).to_csv(run_dir / "hidden_state_metrics.csv", index=False)
-    np.savez_compressed(
-        run_dir / "junction_features.npz",
-        features=junction_features,
-        cues=junction_cues,
-    )
-    np.savez_compressed(run_dir / "gvf_weights.npz", weights=gvf.w)
+    if not adapter_summary_storage:
+        pd.DataFrame(hidden_rows).to_csv(run_dir / "hidden_state_metrics.csv", index=False)
+        np.savez_compressed(
+            run_dir / "junction_features.npz",
+            features=junction_features,
+            cues=junction_cues,
+        )
+        np.savez_compressed(run_dir / "gvf_weights.npz", weights=gvf.w)
 
     final_window = min(config["final_window_trials"], len(trials))
     threshold_rows = trials[
@@ -452,7 +603,9 @@ def _execute_run(
     outcome_indices = [
         index for index, definition in enumerate(gvf.defs) if "outcome" in definition.name
     ]
+    validity = tracker.finalize()
     summary: dict[str, Any] = {
+        "environment": "tmaze",
         "condition": condition,
         "seed": seed,
         "interactions": int(config["total_interactions"]),
@@ -475,12 +628,17 @@ def _execute_run(
         "p95_update_norm": float(np.quantile(controller_update_norms, 0.95)),
         "max_update_norm": float(np.max(controller_update_norms)),
         "final_parameter_norm": float(np.linalg.norm(controller.w)),
-        "nan_count": 0,
-        "inf_count": 0,
-        "divergence_flag": 0,
+        "final_performance": float(trials.tail(final_window)["correct"].mean()),
+        "nan_count": int(validity["nan_count"]),
+        "inf_count": int(validity["inf_count"]),
+        "divergence_flag": int(validity["divergence_flag"]),
         "wall_seconds": float(time.time() - started),
         "run_dir": str(run_dir),
-        "run_status": "ok",
+        "run_status": "valid" if adapter_summary_storage else "ok",
+        "storage_schema": config.get("storage_schema", "legacy_csv"),
+        **controller.alpha_metrics(),
+        **adapter_metadata,
+        "adapter": adapter_metadata["adapter_name"],
     }
     if transform is not None:
         summary.update(transform.state_metrics())

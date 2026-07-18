@@ -1,0 +1,32 @@
+{
+  "profile": "utilization_stage_b2_full",
+  "experiment_stage": "norm_scaled",
+  "controller_alpha_mode": "norm_scaled",
+  "storage_schema": "adapter_summary_v1",
+  "result_schema_version": 1,
+  "enforce_repository_containment": true,
+  "controller_alpha_norm": {"ema_beta": 0.01, "epsilon": 0.000001, "alpha_min": 0.000001, "alpha_max_multiplier": 1.0},
+  "remote_full": true,
+  "seeds": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+  "seed_sets": {"pilot": [200, 201, 202, 203, 204], "tuning": [100, 101, 102, 103, 104], "evaluation": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19], "smoke": [9000, 9001]},
+  "environments": {
+    "hidden_velocity": {"interactions": 260000, "conditions": ["observation_only", "raw", "whitened", "matched", "oracle"], "bank": "mixed", "kwargs": {"noise_std": 0.015}, "control_alpha": 0.002, "gamma": 0.95, "threshold": -0.3}
+  },
+  "horizons": [0.65, 0.9], "trace_dim": 16, "predictive_alpha": 0.006, "control_alpha": 0.006,
+  "gamma": 0.98, "lambda": 0.8, "epsilon": 0.05,
+  "transform_eps": 0.001, "transform_min_samples": 128, "cov_update_every": 100,
+  "moment_beta": 0.005, "moment_learning_rate": 0.0005,
+  "covariance_shrinkage": 0.05, "matrix_smoothing": 0.1,
+  "extreme_finite_limit": 1000000000000.0,
+  "metrics_stride": 200, "analysis_burn_in": 5000, "reservoir_size": 10000,
+  "moving_window": 300, "final_window": 2000, "settling_consecutive_steps": 20,
+  "recovery_consecutive_steps": 8, "workers": 16,
+  "robust_bootstrap_samples": 2000, "robust_bootstrap_seed": 1729,
+  "catastrophic_failure": {"global": {"max_control_update_norm_above": 100.0}, "environments": {"hidden_velocity": {"final_window_reward_below": -6.0, "final_window_stabilization_rate_below": 0.005, "final_window_position_rmse_above": 2.4}}},
+  "utilization_adapters": [
+    {"name": "identity", "scope": "controller_state"},
+    {"name": "residual_rff", "scope": "controller_state", "width": 64, "frequency_scale": 1.0, "residual": true},
+    {"name": "tile_coding", "scope": "controller_state", "num_tilings": 8, "table_size": 512, "tiles_per_unit": 4.0, "residual": true}
+  ],
+  "output_dir": "results/utilization_adapters"
+}

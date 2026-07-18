@@ -57,6 +57,7 @@ from .production_runtime import (
 from .robust_stats import build_robust_summaries
 from .runtime_validation import RuntimeValidityError, RuntimeValidityTracker
 from .transforms import FeatureTransform, rep_metrics
+from .utilization_adapters import make_utilization_adapter, normalize_adapter_config
 
 
 BASELINE_CONDITIONS = {"observation_only", "oracle"}
@@ -143,6 +144,14 @@ COMPACT_RUN_REQUIRED_ENTRIES = {
     "figures",
     *COMPACT_TRACE_FILES,
 }
+ADAPTER_SUMMARY_RUN_REQUIRED_ENTRIES = {
+    "config.json",
+    "manifest.json",
+    "runtime_validity.json",
+    "summary.csv",
+    "summary.json",
+    "stdout.log",
+}
 INVALID_TUNING_COLUMNS = [
     "environment",
     "condition",
@@ -180,7 +189,10 @@ RUNTIME_FAILURE_FIELDS = {
 
 
 def required_run_entries(config: dict[str, Any]) -> set[str]:
-    if config.get("storage_schema", "legacy_csv") == "compact_v2":
+    schema = config.get("storage_schema", "legacy_csv")
+    if schema == "adapter_summary_v1":
+        return set(ADAPTER_SUMMARY_RUN_REQUIRED_ENTRIES)
+    if schema == "compact_v2":
         return set(COMPACT_RUN_REQUIRED_ENTRIES)
     return set(LEGACY_RUN_REQUIRED_ENTRIES) | {"runtime_validity.json"}
 
@@ -265,8 +277,8 @@ def load_cross_config(path: str | Path) -> dict[str, Any]:
         multipliers = tuning.setdefault("multipliers", [0.125, 0.25, 0.5, 1.0, 2.0, 4.0])
         candidate_alphas(float(config["control_alpha"]), list(map(float, multipliers)))
     storage_schema = str(config.get("storage_schema", "legacy_csv"))
-    if storage_schema not in {"legacy_csv", "compact_v2"}:
-        raise ValueError("storage_schema must be legacy_csv or compact_v2")
+    if storage_schema not in {"legacy_csv", "compact_v2", "adapter_summary_v1"}:
+        raise ValueError("storage_schema must be legacy_csv, compact_v2, or adapter_summary_v1")
     defaults = {
         "transform_eps": 1e-3,
         "transform_min_samples": 64,
@@ -316,6 +328,9 @@ def load_cross_config(path: str | Path) -> dict[str, Any]:
     }
     for key, value in defaults.items():
         config.setdefault(key, value)
+    config["utilization_adapter"] = normalize_adapter_config(
+        config.get("utilization_adapter")
+    )
     return config
 
 
@@ -350,6 +365,8 @@ def _manifest_base(
         "parallelism": "cpu-process",
         "result_schema_version": int(config.get("result_schema_version", COMPACT_SCHEMA_VERSION)),
         "storage_schema": config.get("storage_schema", "legacy_csv"),
+        "utilization_adapter": normalize_adapter_config(config.get("utilization_adapter")),
+        "controller_input_definition": "observation_plus_adapted_controller_state_plus_bias_v1",
     }
 
 
@@ -540,13 +557,30 @@ def _execute_cross_run(
         trace_dim=config["trace_dim"],
         bank=env_spec.get("bank", "mixed"),
     )
-    write_json(run_dir / "predictive_definitions.json", bank.definition_records())
+    storage_schema = str(config.get("storage_schema", "legacy_csv"))
+    adapter_summary_storage = storage_schema == "adapter_summary_v1"
+    if not adapter_summary_storage:
+        write_json(run_dir / "predictive_definitions.json", bank.definition_records())
     observation = env.observation
     raw = bank.features(observation)
     transform = _make_transform(condition, environment, bank.d, config)
     transformed = _transform(transform, raw) if condition not in BASELINE_CONDITIONS else np.empty(0)
     state = _controller_state(condition, env, transformed)
-    features = _controller_features(observation, state)
+    adapter = make_utilization_adapter(
+        config.get("utilization_adapter"),
+        environment=environment,
+        run_seed=seed,
+        input_dim=len(state),
+    )
+    adapted_state = adapter.transform(state)
+    features = _controller_features(observation, adapted_state)
+    adapter_metadata = adapter.metadata().as_dict()
+    adapter_metadata["final_controller_dim"] = len(features)
+    manifest_path = run_dir / "manifest.json"
+    if manifest_path.is_file():
+        running_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        running_manifest.update(adapter_metadata)
+        write_json(manifest_path, running_manifest)
     base_alpha = float(env_spec.get("control_alpha", config["control_alpha"]))
     controller_alpha = float(task_options.get("controller_alpha", base_alpha))
     alpha_mode = str(config.get("controller_alpha_mode", "fixed"))
@@ -568,8 +602,10 @@ def _execute_cross_run(
     action = controller.act(features)
     diagnostic_dim = len(_diagnostic_features(condition, observation, env.oracle_features, transformed))
     latent_dim = len(env.latent_state)
-    reservoir = DiagnosticReservoir(config["reservoir_size"], seed + 101)
-    compact_storage = config.get("storage_schema", "legacy_csv") == "compact_v2"
+    reservoir = (
+        None if adapter_summary_storage else DiagnosticReservoir(config["reservoir_size"], seed + 101)
+    )
+    compact_storage = storage_schema in {"compact_v2", "adapter_summary_v1"}
     step_rows: list[dict[str, Any]] = []
     decision_rows: list[dict[str, Any]] = []
     prediction_rows: list[dict[str, Any]] = []
@@ -640,7 +676,8 @@ def _execute_cross_run(
                 else np.empty(0)
             )
             next_state = _controller_state(condition, env, next_transformed)
-            next_features = _controller_features(next_observation, next_state)
+            next_adapted_state = adapter.transform(next_state)
+            next_features = _controller_features(next_observation, next_adapted_state)
             next_action = controller.act(next_features)
             control_delta, update_norm, parameter_norm = controller.update(
                 features, action, reward, next_features, next_action
@@ -677,6 +714,8 @@ def _execute_cross_run(
                 "predictive_stream_state": bank.current_x,
                 "predictive_current_predictions": bank.current_predictions,
                 "predictive_trace_state": bank.m,
+                "adapted_controller_state": adapted_state,
+                "next_adapted_controller_state": next_adapted_state,
                 "control_td_error": control_delta,
                 "control_update_norm": update_norm,
                 "predictive_td_error": prediction_update.deltas,
@@ -692,7 +731,8 @@ def _execute_cross_run(
             transform_state=transform_state,
         )
 
-        if interaction >= config["analysis_burn_in"]:
+        if not adapter_summary_storage and interaction >= config["analysis_burn_in"]:
+            assert reservoir is not None
             reservoir.add(
                 analysis_vector,
                 np.asarray(info.latent),
@@ -840,44 +880,62 @@ def _execute_cross_run(
                 )
 
         observation, raw, transformed = next_observation, next_raw, next_transformed
+        adapted_state = next_adapted_state
         features, action = next_features, next_action
 
-    sample_features, sample_latents, sample_groups = reservoir.arrays(diagnostic_dim, latent_dim)
-    sample_positions, sample_decisions, sample_phases = reservoir.metadata_arrays()
-    representation = rep_metrics(sample_features)
-    task_metrics, probe_payload = task_information_metrics(
-        environment, sample_features, sample_latents, sample_groups, seed + 700
-    )
-    decision_metrics, by_position_rows = decision_conditioned_metrics(
-        environment,
-        sample_features,
-        sample_latents,
-        sample_groups,
-        sample_positions,
-        sample_decisions,
-        sample_phases,
-        seed + 1700,
-    )
-    representation.update(
-        environment=environment,
-        condition=condition,
-        seed=seed,
-        experiment_stage=config.get("experiment_stage", "fixed"),
-    )
-    if "candidate_alpha" in task_options:
-        representation["candidate_alpha"] = task_options["candidate_alpha"]
-    if transform is not None:
-        representation.update(transform.state_metrics())
-    task_row = dict(
-        task_metrics,
-        **decision_metrics,
-        environment=environment,
-        condition=condition,
-        seed=seed,
-        experiment_stage=config.get("experiment_stage", "fixed"),
-    )
-    if "candidate_alpha" in task_options:
-        task_row["candidate_alpha"] = task_options["candidate_alpha"]
+    if adapter_summary_storage:
+        sample_features = np.empty((0, diagnostic_dim), dtype=np.float64)
+        sample_latents = np.empty((0, latent_dim), dtype=np.float64)
+        sample_groups = np.empty(0, dtype=np.int64)
+        sample_positions = np.empty(0, dtype=np.int64)
+        sample_decisions = np.empty(0, dtype=np.int64)
+        sample_phases = np.empty(0, dtype=np.int64)
+        representation: dict[str, Any] = {}
+        task_metrics: dict[str, Any] = {}
+        decision_metrics: dict[str, Any] = {}
+        by_position_rows: list[dict[str, Any]] = []
+        probe_payload: dict[str, Any] = {}
+        task_row: dict[str, Any] = {}
+    else:
+        assert reservoir is not None
+        sample_features, sample_latents, sample_groups = reservoir.arrays(
+            diagnostic_dim, latent_dim
+        )
+        sample_positions, sample_decisions, sample_phases = reservoir.metadata_arrays()
+        representation = rep_metrics(sample_features)
+        task_metrics, probe_payload = task_information_metrics(
+            environment, sample_features, sample_latents, sample_groups, seed + 700
+        )
+        decision_metrics, by_position_rows = decision_conditioned_metrics(
+            environment,
+            sample_features,
+            sample_latents,
+            sample_groups,
+            sample_positions,
+            sample_decisions,
+            sample_phases,
+            seed + 1700,
+        )
+        representation.update(
+            environment=environment,
+            condition=condition,
+            seed=seed,
+            experiment_stage=config.get("experiment_stage", "fixed"),
+        )
+        if "candidate_alpha" in task_options:
+            representation["candidate_alpha"] = task_options["candidate_alpha"]
+        if transform is not None:
+            representation.update(transform.state_metrics())
+        task_row = dict(
+            task_metrics,
+            **decision_metrics,
+            environment=environment,
+            condition=condition,
+            seed=seed,
+            experiment_stage=config.get("experiment_stage", "fixed"),
+        )
+        if "candidate_alpha" in task_options:
+            task_row["candidate_alpha"] = task_options["candidate_alpha"]
     final_correct = all_correct[-config["final_window"] :]
     final_reward = (
         float(np.mean(final_reward_window))
@@ -983,6 +1041,8 @@ def _execute_cross_run(
         **decision_metrics,
         **controller.alpha_metrics(),
         **HIDDEN_SUMMARY_DEFAULTS,
+        **adapter_metadata,
+        "adapter": adapter_metadata["adapter_name"],
     }
     if hidden_environment:
         if compact_storage:
@@ -1007,7 +1067,7 @@ def _execute_cross_run(
     ]
     if "candidate_alpha" in task_options:
         decision_columns.append("candidate_alpha")
-    if compact_storage:
+    if compact_storage and not adapter_summary_storage:
         write_columnar_npz(run_dir / "strided_trace.npz", compact_trace_rows)
         write_columnar_npz(run_dir / "decision_event_trace.npz", decision_rows)
         write_columnar_npz(
@@ -1034,26 +1094,30 @@ def _execute_cross_run(
             state_payload["gaussian_skew_parameter"] = transform.gaussian_skew_parameter
             state_payload["gaussian_tail_parameter"] = transform.gaussian_tail_parameter
         np.savez_compressed(run_dir / "model_state.npz", **state_payload)
-    else:
+    elif not adapter_summary_storage:
         pd.DataFrame(decision_rows, columns=decision_columns).to_csv(
             run_dir / "decision_metrics.csv", index=False
         )
         pd.DataFrame(prediction_rows).to_csv(run_dir / "prediction_metrics.csv", index=False)
         pd.DataFrame(update_rows).to_csv(run_dir / "update_metrics.csv", index=False)
-    pd.DataFrame([representation]).to_csv(run_dir / "representation_metrics.csv", index=False)
-    pd.DataFrame([task_row]).to_csv(run_dir / "task_information_metrics.csv", index=False)
-    by_position = pd.DataFrame(by_position_rows)
-    if len(by_position):
-        by_position.insert(0, "seed", seed)
-        if "candidate_alpha" in task_options:
-            by_position.insert(0, "candidate_alpha", task_options["candidate_alpha"])
-        by_position.insert(0, "condition", condition)
-        by_position.insert(0, "environment", environment)
-    by_position.to_csv(run_dir / "decision_probe_by_position.csv", index=False)
+    if not adapter_summary_storage:
+        pd.DataFrame([representation]).to_csv(run_dir / "representation_metrics.csv", index=False)
+        pd.DataFrame([task_row]).to_csv(run_dir / "task_information_metrics.csv", index=False)
+        by_position = pd.DataFrame(by_position_rows)
+        if len(by_position):
+            by_position.insert(0, "seed", seed)
+            if "candidate_alpha" in task_options:
+                by_position.insert(0, "candidate_alpha", task_options["candidate_alpha"])
+            by_position.insert(0, "condition", condition)
+            by_position.insert(0, "environment", environment)
+        by_position.to_csv(run_dir / "decision_probe_by_position.csv", index=False)
     pd.DataFrame([summary]).to_csv(run_dir / "summary.csv", index=False)
     write_json(run_dir / "summary.json", summary)
     diagnostic_identity = f"{environment}/{condition}/seed_{seed:03d}"
-    if not compact_storage or diagnostic_identity in set(config.get("diagnostic_full_trace_runs", [])):
+    if not adapter_summary_storage and (
+        not compact_storage
+        or diagnostic_identity in set(config.get("diagnostic_full_trace_runs", []))
+    ):
         np.savez_compressed(
             run_dir / "diagnostic_samples.npz",
             features=sample_features,
@@ -1186,7 +1250,7 @@ def _completed_run(
     required = required_run_entries(config)
     if not run_dir.is_dir() or not required <= {path.name for path in run_dir.iterdir()}:
         return False
-    if not (run_dir / "figures").is_dir() or any(
+    if ("figures" in required and not (run_dir / "figures").is_dir()) or any(
         not (run_dir / name).is_file() for name in required - {"figures"}
     ):
         return False
@@ -1362,7 +1426,8 @@ def run_cross_one(task: tuple[Any, ...]) -> dict[str, Any]:
             raise FileExistsError(f"{run_dir} already exists; use {action} to preserve and rerun it")
         _archive_attempt(run_dir, root)
     run_dir.mkdir(parents=True, exist_ok=False)
-    (run_dir / "figures").mkdir()
+    if config.get("storage_schema", "legacy_csv") != "adapter_summary_v1":
+        (run_dir / "figures").mkdir()
     started = time.time()
     manifest = _manifest_base(config, environment, condition, seed)
     env_spec = config["environments"][environment]
@@ -1406,6 +1471,19 @@ def run_cross_one(task: tuple[Any, ...]) -> dict[str, Any]:
         if invalid:
             manifest["first_failure"] = vars(error.failure)
         write_json(run_dir / "manifest.json", manifest)
+        if (
+            config.get("storage_schema") == "adapter_summary_v1"
+            and not (run_dir / "runtime_validity.json").exists()
+        ):
+            write_json(
+                run_dir / "runtime_validity.json",
+                {
+                    "status": "failed",
+                    "resume_eligible": False,
+                    "error_type": type(error).__name__,
+                    "error": str(error),
+                },
+            )
         (run_dir / "stdout.log").write_text(
             f"failed environment={environment} condition={condition} seed={seed}\n"
             f"{type(error).__name__}: {error}\n{error_traceback}",
@@ -1419,6 +1497,19 @@ def run_cross_one(task: tuple[Any, ...]) -> dict[str, Any]:
         resume_eligible=True,
         wall_seconds=summary["wall_seconds"],
     )
+    for key in (
+        "adapter_version",
+        "adapter_name",
+        "adapter_scope",
+        "adapter_input_dim",
+        "adapter_block_dim",
+        "adapter_output_dim",
+        "adapter_seed",
+        "adapter_residual",
+        "adapter_fixed_hyperparameters",
+        "final_controller_dim",
+    ):
+        manifest[key] = summary[key]
     write_json(run_dir / "manifest.json", manifest)
     return summary
 
