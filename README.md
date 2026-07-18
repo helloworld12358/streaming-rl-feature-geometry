@@ -76,7 +76,7 @@ The pilot uses seeds 0, 1, and 2, 20,000 interactions, and all registered condit
 
 The 20-seed full profiles are blocked unless both safeguards are present: `RL_RUN_CONTEXT=remote` and `--allow-full-run`. Hostname guesses and either safeguard alone are intentionally insufficient.
 
-Fixed nonlinear controller-state utilization adapters are registered in three guarded stages. Identity, residual 64-wide random Fourier features, and 8-tiling/512-entry tile coding are non-learnable, state-only additions to the existing linear controller input. The exact matrices, strict baseline reuse gate, lightweight `adapter_summary_v1` storage, local smoke, and remote commands are documented in [docs/UTILIZATION_ADAPTER_EXPERIMENT_GUIDE_ZH.md](docs/UTILIZATION_ADAPTER_EXPERIMENT_GUIDE_ZH.md). Formal execution remains CPU-only and remote-only; missing Stage A baseline evidence stops the launcher instead of triggering extra identity runs.
+Fixed nonlinear utilization adapters are registered in three guarded stages. Identity, residual 64-wide random Fourier features, and 8-tiling/512-entry tile coding are non-learnable maps applied after the complete legacy controller input `[observation, condition state, bias]` has been assembled. The exact matrices, strict fieldwise reuse rules, lightweight `adapter_summary_v1` storage, audit/aggregation tools, local smoke, and remote workflow are documented in [docs/UTILIZATION_ADAPTER_EXPERIMENT_GUIDE_ZH.md](docs/UTILIZATION_ADAPTER_EXPERIMENT_GUIDE_ZH.md). Formal execution remains CPU-only and remote-only; missing or incompatible baseline cells are reported and scheduled as new identity runs without shrinking the matrix.
 
 ## 14. Remote command
 

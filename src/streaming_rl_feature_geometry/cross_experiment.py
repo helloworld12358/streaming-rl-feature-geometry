@@ -338,12 +338,20 @@ def _manifest_base(
     config: dict[str, Any], environment: str | None = None, condition: str | None = None,
     seed: int | None = None,
 ) -> dict[str, Any]:
+    commit = git_value("rev-parse", "HEAD")
+    adapter = normalize_adapter_config(config.get("utilization_adapter"))
     return {
-        "git_commit": git_value("rev-parse", "HEAD"),
+        "git_commit": commit,
+        "source_commit": commit,
         "git_branch": git_value("branch", "--show-current"),
         "git_dirty": bool(git_value("status", "--porcelain")),
         "exact_command": [Path(sys.executable).name, *sys.argv],
         "profile": config["profile"],
+        "run_id": (
+            None
+            if environment is None or condition is None or seed is None
+            else f"{environment}/{condition}/{adapter['name']}/seed_{int(seed):03d}"
+        ),
         "environment": environment,
         "representation": condition,
         "condition": condition,
@@ -365,8 +373,12 @@ def _manifest_base(
         "parallelism": "cpu-process",
         "result_schema_version": int(config.get("result_schema_version", COMPACT_SCHEMA_VERSION)),
         "storage_schema": config.get("storage_schema", "legacy_csv"),
-        "utilization_adapter": normalize_adapter_config(config.get("utilization_adapter")),
-        "controller_input_definition": "observation_plus_adapted_controller_state_plus_bias_v1",
+        "result_schema": config.get("storage_schema", "legacy_csv"),
+        "utilization_adapter": adapter,
+        "controller_input_definition": (
+            "adapter_of_complete_controller_input_"
+            "observation_then_condition_state_then_bias_v2"
+        ),
     }
 
 
@@ -566,14 +578,14 @@ def _execute_cross_run(
     transform = _make_transform(condition, environment, bank.d, config)
     transformed = _transform(transform, raw) if condition not in BASELINE_CONDITIONS else np.empty(0)
     state = _controller_state(condition, env, transformed)
+    controller_input = _controller_features(observation, state)
     adapter = make_utilization_adapter(
         config.get("utilization_adapter"),
         environment=environment,
         run_seed=seed,
-        input_dim=len(state),
+        input_dim=len(controller_input),
     )
-    adapted_state = adapter.transform(state)
-    features = _controller_features(observation, adapted_state)
+    features = adapter.transform(controller_input)
     adapter_metadata = adapter.metadata().as_dict()
     adapter_metadata["final_controller_dim"] = len(features)
     manifest_path = run_dir / "manifest.json"
@@ -676,8 +688,8 @@ def _execute_cross_run(
                 else np.empty(0)
             )
             next_state = _controller_state(condition, env, next_transformed)
-            next_adapted_state = adapter.transform(next_state)
-            next_features = _controller_features(next_observation, next_adapted_state)
+            next_controller_input = _controller_features(next_observation, next_state)
+            next_features = adapter.transform(next_controller_input)
             next_action = controller.act(next_features)
             control_delta, update_norm, parameter_norm = controller.update(
                 features, action, reward, next_features, next_action
@@ -714,8 +726,8 @@ def _execute_cross_run(
                 "predictive_stream_state": bank.current_x,
                 "predictive_current_predictions": bank.current_predictions,
                 "predictive_trace_state": bank.m,
-                "adapted_controller_state": adapted_state,
-                "next_adapted_controller_state": next_adapted_state,
+                "controller_input": controller_input,
+                "next_controller_input": next_controller_input,
                 "control_td_error": control_delta,
                 "control_update_norm": update_norm,
                 "predictive_td_error": prediction_update.deltas,
@@ -880,7 +892,7 @@ def _execute_cross_run(
                 )
 
         observation, raw, transformed = next_observation, next_raw, next_transformed
-        adapted_state = next_adapted_state
+        controller_input = next_controller_input
         features, action = next_features, next_action
 
     if adapter_summary_storage:
@@ -1443,6 +1455,13 @@ def run_cross_one(task: tuple[Any, ...]) -> dict[str, Any]:
         controller_alpha=options.get(
             "controller_alpha", env_spec.get("control_alpha", config["control_alpha"])
         ),
+        control_alpha=options.get(
+            "controller_alpha", env_spec.get("control_alpha", config["control_alpha"])
+        ),
+        predictive_alpha=env_spec.get("predictive_alpha", config["predictive_alpha"]),
+        gamma=env_spec.get("gamma", config["gamma"]),
+        lambda_=env_spec.get("lambda", config["lambda"]),
+        epsilon=env_spec.get("epsilon", config["epsilon"]),
         environment_kwargs=env_spec.get("kwargs", {}),
         final_window=config["final_window"],
         settling_consecutive_steps=config.get("settling_consecutive_steps", 20),
@@ -1450,6 +1469,7 @@ def run_cross_one(task: tuple[Any, ...]) -> dict[str, Any]:
         controller_alpha_norm=config.get("controller_alpha_norm", {}),
         alpha_tuning=config.get("alpha_tuning", {}),
     )
+    manifest["lambda"] = manifest.pop("lambda_")
     write_json(run_dir / "manifest.json", manifest)
     write_json(run_dir / "config.json", config)
     try:

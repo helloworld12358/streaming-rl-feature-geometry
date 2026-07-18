@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -22,7 +22,17 @@ REQUIRED_RUN_FILES = {
     "stdout.log",
 }
 FORBIDDEN_SUFFIXES = {".npz", ".npy", ".png"}
-FORMAL_NEW_RUNS = 620
+FORMAL_NEW_RUNS = 1290
+FORMAL_RUNS_BY_ADAPTER = {
+    "identity": 600,
+    "residual_rff": 600,
+    "tile_coding": 90,
+}
+FORMAL_RUNS_BY_STAGE = {
+    "stage-a": {"identity": 560, "residual_rff": 560, "tile_coding": 0},
+    "stage-b1": {"identity": 40, "residual_rff": 40, "tile_coding": 40},
+    "stage-b2": {"identity": 0, "residual_rff": 0, "tile_coding": 50},
+}
 
 
 def build_storage_report(run_root: str | Path) -> tuple[dict[str, Any], pd.DataFrame]:
@@ -56,7 +66,26 @@ def build_storage_report(run_root: str | Path) -> tuple[dict[str, Any], pd.DataF
         )
     inventory = pd.DataFrame(rows)
     per_run = int(inventory["bytes"].max())
-    expected = FORMAL_NEW_RUNS * per_run
+    by_adapter = {
+        adapter: int(group["bytes"].max())
+        for adapter, group in inventory.groupby("adapter")
+    }
+    missing_adapters = sorted(set(FORMAL_RUNS_BY_ADAPTER) - set(by_adapter))
+    if missing_adapters:
+        raise ValueError(f"storage pilot is missing adapters: {missing_adapters}")
+    expected = sum(
+        FORMAL_RUNS_BY_ADAPTER[adapter] * by_adapter[adapter]
+        for adapter in FORMAL_RUNS_BY_ADAPTER
+    )
+    stage_projection = {
+        stage: sum(counts[adapter] * by_adapter[adapter] for adapter in counts)
+        for stage, counts in FORMAL_RUNS_BY_STAGE.items()
+    }
+    aggregate_bytes = 5 * 1024 * 1024
+    package_bytes = expected + aggregate_bytes
+    peak = expected + aggregate_bytes + package_bytes
+    free = shutil.disk_usage(root.resolve()).free
+    safety = 10 * 1024**3
     report = {
         "schema": "adapter_storage_pilot_v1",
         "status": "valid",
@@ -64,9 +93,17 @@ def build_storage_report(run_root: str | Path) -> tuple[dict[str, Any], pd.DataF
         "pilot_runs": len(inventory),
         "mean_run_bytes": float(inventory["bytes"].mean()),
         "adapter_summary_bytes_per_run": per_run,
+        "bytes_per_run_by_adapter": by_adapter,
         "formal_new_runs": FORMAL_NEW_RUNS,
+        "formal_runs_by_adapter": FORMAL_RUNS_BY_ADAPTER,
+        "stage_projection_bytes": stage_projection,
         "expected_output_bytes": expected,
-        "estimated_peak_disk_bytes": int(math.ceil(expected * 1.25)),
+        "aggregate_and_figure_bytes": aggregate_bytes,
+        "estimated_package_bytes": package_bytes,
+        "estimated_peak_disk_bytes": peak,
+        "peak_plus_10_gib_bytes": peak + safety,
+        "current_free_space_bytes": free,
+        "launch_allowed": free >= peak + safety,
     }
     return report, inventory
 

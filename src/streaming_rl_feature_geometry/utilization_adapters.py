@@ -1,8 +1,9 @@
-"""Fixed, state-only controller utilization adapters.
+"""Fixed, non-learnable adapters for the complete current controller input.
 
-The adapters in this module are deliberately non-learnable.  They receive only
-the controller state selected by an experiment condition and never observe the
-raw observation, reward, action, latent labels, or future samples.
+The caller first constructs the exact vector the unmodified controller would
+have received, including observation and bias.  An adapter may only map that
+current vector; it never receives rewards, actions, latent labels, or future
+samples.
 """
 
 from __future__ import annotations
@@ -15,8 +16,8 @@ from typing import Any, Mapping
 import numpy as np
 
 
-ADAPTER_VERSION = "utilization-adapter-v1"
-ADAPTER_SCOPE = "controller_state"
+ADAPTER_VERSION = "utilization-adapter-v2-complete-input"
+ADAPTER_SCOPE = "complete_controller_input"
 ADAPTER_NAMES = ("identity", "residual_rff", "tile_coding")
 RFF_WIDTH = 64
 RFF_FREQUENCY_SCALE = 1.0
@@ -39,22 +40,18 @@ def normalize_adapter_config(value: Mapping[str, Any] | None) -> dict[str, Any]:
     an explicit identity configuration.  No invalid value is corrected.
     """
 
-    raw = {"name": "identity", "scope": ADAPTER_SCOPE} if value is None else dict(value)
+    raw = {"name": "identity"} if value is None else dict(value)
     name = raw.get("name")
-    scope = raw.get("scope")
     if name not in ADAPTER_NAMES:
         raise ValueError(f"utilization_adapter.name must be one of {list(ADAPTER_NAMES)}")
-    if scope != ADAPTER_SCOPE:
-        raise ValueError(f"utilization_adapter.scope must be {ADAPTER_SCOPE!r}")
 
     if name == "identity":
-        allowed = {"name", "scope"}
-        canonical = {"name": name, "scope": scope}
+        allowed = {"name"}
+        canonical = {"name": name}
     elif name == "residual_rff":
-        allowed = {"name", "scope", "width", "frequency_scale", "residual"}
+        allowed = {"name", "width", "frequency_scale", "residual"}
         canonical = {
             "name": name,
-            "scope": scope,
             "width": int(raw.get("width", RFF_WIDTH)),
             "frequency_scale": float(raw.get("frequency_scale", RFF_FREQUENCY_SCALE)),
             "residual": raw.get("residual", True),
@@ -68,7 +65,6 @@ def normalize_adapter_config(value: Mapping[str, Any] | None) -> dict[str, Any]:
     else:
         allowed = {
             "name",
-            "scope",
             "num_tilings",
             "table_size",
             "tiles_per_unit",
@@ -76,7 +72,6 @@ def normalize_adapter_config(value: Mapping[str, Any] | None) -> dict[str, Any]:
         }
         canonical = {
             "name": name,
-            "scope": scope,
             "num_tilings": int(raw.get("num_tilings", TILE_NUM_TILINGS)),
             "table_size": int(raw.get("table_size", TILE_TABLE_SIZE)),
             "tiles_per_unit": float(raw.get("tiles_per_unit", TILE_TILES_PER_UNIT)),
@@ -97,16 +92,18 @@ def normalize_adapter_config(value: Mapping[str, Any] | None) -> dict[str, Any]:
     return canonical
 
 
-def _validate_state(state: np.ndarray, input_dim: int) -> np.ndarray:
-    if not isinstance(state, np.ndarray):
-        raise TypeError("utilization adapter state must be a numpy array")
-    if state.ndim != 1 or state.shape != (input_dim,):
-        raise ValueError(f"adapter expected state shape {(input_dim,)}, received {state.shape}")
-    if state.dtype != np.float64:
-        raise TypeError("utilization adapter state must have dtype float64")
-    if not np.isfinite(state).all():
+def _validate_input(controller_input: np.ndarray, input_dim: int) -> np.ndarray:
+    if not isinstance(controller_input, np.ndarray):
+        raise TypeError("utilization adapter input must be a numpy array")
+    if controller_input.ndim != 1 or controller_input.shape != (input_dim,):
+        raise ValueError(
+            f"adapter expected input shape {(input_dim,)}, received {controller_input.shape}"
+        )
+    if controller_input.dtype != np.float64:
+        raise TypeError("utilization adapter input must have dtype float64")
+    if not np.isfinite(controller_input).all():
         raise FloatingPointError("utilization adapter received NaN or Inf")
-    return state
+    return controller_input
 
 
 @dataclass(frozen=True)
@@ -147,16 +144,16 @@ class UtilizationAdapter:
         input_dim: int,
         block_dim: int,
     ) -> None:
-        if int(input_dim) < 0:
-            raise ValueError("adapter input_dim must be non-negative")
+        if int(input_dim) < 1:
+            raise ValueError("complete controller input dimension must be positive")
         self.config = normalize_adapter_config(config)
         self.environment = str(environment)
         self.run_seed = int(run_seed)
         self.input_dim = int(input_dim)
-        self.block_dim = 0 if self.input_dim == 0 else int(block_dim)
+        self.block_dim = int(block_dim)
         self.output_dim = self.input_dim + self.block_dim
 
-    def transform(self, state: np.ndarray) -> np.ndarray:
+    def transform(self, controller_input: np.ndarray) -> np.ndarray:
         raise NotImplementedError
 
     def _validate_output(self, output: np.ndarray) -> np.ndarray:
@@ -179,7 +176,7 @@ class UtilizationAdapter:
         fixed = {
             key: value
             for key, value in self.config.items()
-            if key not in {"name", "scope", "residual"}
+            if key not in {"name", "residual"}
         }
         return AdapterMetadata(
             version=ADAPTER_VERSION,
@@ -198,63 +195,55 @@ class IdentityAdapter(UtilizationAdapter):
     def __init__(self, config: Mapping[str, Any], **kwargs: Any) -> None:
         super().__init__(config, block_dim=0, **kwargs)
 
-    def transform(self, state: np.ndarray) -> np.ndarray:
-        state = _validate_state(state, self.input_dim)
+    def transform(self, controller_input: np.ndarray) -> np.ndarray:
+        controller_input = _validate_input(controller_input, self.input_dim)
         # Identity is intentionally a true no-op: no copy, cast, RNG, or state.
-        return self._validate_output(state)
+        return self._validate_output(controller_input)
 
 
 class ResidualRFFAdapter(UtilizationAdapter):
     def __init__(self, config: Mapping[str, Any], **kwargs: Any) -> None:
         super().__init__(config, block_dim=RFF_WIDTH, **kwargs)
-        if self.input_dim == 0:
-            self.W = np.empty((RFF_WIDTH, 0), dtype=np.float64)
-            self.b = np.empty(0, dtype=np.float64)
-        else:
-            rng = np.random.default_rng(derive_adapter_seed(self.environment, self.run_seed))
-            self.W = rng.normal(
-                0.0, RFF_FREQUENCY_SCALE, size=(RFF_WIDTH, self.input_dim)
-            ).astype(np.float64, copy=False)
-            self.b = rng.uniform(0.0, 2.0 * math.pi, size=RFF_WIDTH).astype(
-                np.float64, copy=False
-            )
+        rng = np.random.default_rng(derive_adapter_seed(self.environment, self.run_seed))
+        self.W = rng.normal(
+            0.0, RFF_FREQUENCY_SCALE, size=(RFF_WIDTH, self.input_dim)
+        ).astype(np.float64, copy=False)
+        self.b = rng.uniform(0.0, 2.0 * math.pi, size=RFF_WIDTH).astype(
+            np.float64, copy=False
+        )
         self.W.setflags(write=False)
         self.b.setflags(write=False)
 
-    def transform(self, state: np.ndarray) -> np.ndarray:
-        state = _validate_state(state, self.input_dim)
-        if self.input_dim == 0:
-            return self._validate_output(state)
-        block = math.sqrt(2.0 / RFF_WIDTH) * np.cos(self.W @ state + self.b)
-        return self._validate_output(np.concatenate((state, block)))
+    def transform(self, controller_input: np.ndarray) -> np.ndarray:
+        controller_input = _validate_input(controller_input, self.input_dim)
+        block = math.sqrt(2.0 / RFF_WIDTH) * np.cos(
+            self.W @ controller_input + self.b
+        )
+        return self._validate_output(np.concatenate((controller_input, block)))
 
 
 class TileCodingAdapter(UtilizationAdapter):
     def __init__(self, config: Mapping[str, Any], **kwargs: Any) -> None:
         super().__init__(config, block_dim=TILE_TABLE_SIZE, **kwargs)
         self._adapter_seed = derive_adapter_seed(self.environment, self.run_seed)
-        if self.input_dim == 0:
-            self.offsets = np.empty((TILE_NUM_TILINGS, 0), dtype=np.float64)
-            self._salts = np.empty(0, dtype=np.uint64)
-        else:
-            tilings = np.arange(TILE_NUM_TILINGS, dtype=np.float64)[:, None]
-            dimensions = np.arange(1, self.input_dim + 1, dtype=np.float64)[None, :]
-            golden = (math.sqrt(5.0) - 1.0) / 2.0
-            self.offsets = np.mod((tilings + 1.0) / TILE_NUM_TILINGS + dimensions * golden, 1.0)
-            salts = []
-            for index in range(self.input_dim):
-                payload = f"{self._adapter_seed}\0tile-dimension\0{index}".encode("utf-8")
-                salts.append(int.from_bytes(hashlib.sha256(payload).digest()[:8], "big"))
-            self._salts = np.asarray(salts, dtype=np.uint64)
+        tilings = np.arange(TILE_NUM_TILINGS, dtype=np.float64)[:, None]
+        dimensions = np.arange(1, self.input_dim + 1, dtype=np.float64)[None, :]
+        golden = (math.sqrt(5.0) - 1.0) / 2.0
+        self.offsets = np.mod(
+            (tilings + 1.0) / TILE_NUM_TILINGS + dimensions * golden, 1.0
+        )
+        salts = []
+        for index in range(self.input_dim):
+            payload = f"{self._adapter_seed}\0tile-dimension\0{index}".encode("utf-8")
+            salts.append(int.from_bytes(hashlib.sha256(payload).digest()[:8], "big"))
+        self._salts = np.asarray(salts, dtype=np.uint64)
         self.offsets.setflags(write=False)
         self._salts.setflags(write=False)
 
-    def tile_indices(self, state: np.ndarray) -> np.ndarray:
-        state = _validate_state(state, self.input_dim)
-        if self.input_dim == 0:
-            return np.empty(0, dtype=np.int64)
+    def tile_indices(self, controller_input: np.ndarray) -> np.ndarray:
+        controller_input = _validate_input(controller_input, self.input_dim)
         coordinates = np.floor(
-            state[None, :] * TILE_TILES_PER_UNIT + self.offsets
+            controller_input[None, :] * TILE_TILES_PER_UNIT + self.offsets
         ).astype(np.int64)
         indices = np.empty(TILE_NUM_TILINGS, dtype=np.int64)
         mask = (1 << 64) - 1
@@ -272,13 +261,15 @@ class TileCodingAdapter(UtilizationAdapter):
             indices[tiling] = value % TILE_TABLE_SIZE
         return indices
 
-    def transform(self, state: np.ndarray) -> np.ndarray:
-        state = _validate_state(state, self.input_dim)
-        if self.input_dim == 0:
-            return self._validate_output(state)
+    def transform(self, controller_input: np.ndarray) -> np.ndarray:
+        controller_input = _validate_input(controller_input, self.input_dim)
         block = np.zeros(TILE_TABLE_SIZE, dtype=np.float64)
-        np.add.at(block, self.tile_indices(state), 1.0 / math.sqrt(TILE_NUM_TILINGS))
-        return self._validate_output(np.concatenate((state, block)))
+        np.add.at(
+            block,
+            self.tile_indices(controller_input),
+            1.0 / math.sqrt(TILE_NUM_TILINGS),
+        )
+        return self._validate_output(np.concatenate((controller_input, block)))
 
 
 def make_utilization_adapter(

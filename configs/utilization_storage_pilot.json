@@ -1,0 +1,43 @@
+{
+  "profile": "utilization_storage_pilot",
+  "experiment_stage": "fixed",
+  "controller_alpha_mode": "fixed",
+  "storage_schema": "adapter_summary_v1",
+  "result_schema_version": 1,
+  "enforce_repository_containment": true,
+  "remote_full": false,
+  "seeds": [9100],
+  "environments": {
+    "tmaze": {"interactions": 300, "conditions": ["raw"], "bank": "mixed", "kwargs": {"corridor_length": 5}, "threshold": 0.8},
+    "ringworld": {"interactions": 300, "conditions": ["raw"], "bank": "mixed", "kwargs": {"size": 12}, "threshold": 0.8},
+    "two_loop": {"interactions": 300, "conditions": ["raw"], "bank": "mixed", "kwargs": {"loop_lengths": [8, 10]}, "threshold": 0.8},
+    "hidden_velocity": {"interactions": 300, "conditions": ["raw"], "bank": "mixed", "kwargs": {"noise_std": 0.015}, "control_alpha": 0.002, "gamma": 0.95, "threshold": -0.3}
+  },
+  "horizons": [0.65, 0.9],
+  "trace_dim": 16,
+  "predictive_alpha": 0.006,
+  "control_alpha": 0.006,
+  "gamma": 0.98,
+  "lambda": 0.8,
+  "epsilon": 0.05,
+  "transform_eps": 0.001,
+  "transform_min_samples": 64,
+  "cov_update_every": 50,
+  "moment_beta": 0.005,
+  "moment_learning_rate": 0.0005,
+  "covariance_shrinkage": 0.05,
+  "matrix_smoothing": 0.1,
+  "extreme_finite_limit": 1000000000000.0,
+  "metrics_stride": 100,
+  "analysis_burn_in": 100,
+  "reservoir_size": 64,
+  "moving_window": 100,
+  "final_window": 100,
+  "workers": 4,
+  "utilization_adapters": [
+    {"name": "identity"},
+    {"name": "residual_rff", "width": 64, "frequency_scale": 1.0, "residual": true},
+    {"name": "tile_coding", "num_tilings": 8, "table_size": 512, "tiles_per_unit": 4.0, "residual": true}
+  ],
+  "output_dir": "results/utilization_storage_pilot"
+}

@@ -13,17 +13,15 @@ from streaming_rl_feature_geometry.utilization_adapters import (
 )
 
 
-IDENTITY = {"name": "identity", "scope": "controller_state"}
+IDENTITY = {"name": "identity"}
 RFF = {
     "name": "residual_rff",
-    "scope": "controller_state",
     "width": 64,
     "frequency_scale": 1.0,
     "residual": True,
 }
 TILE = {
     "name": "tile_coding",
-    "scope": "controller_state",
     "num_tilings": 8,
     "table_size": 512,
     "tiles_per_unit": 4.0,
@@ -78,13 +76,9 @@ def test_adapter_seed_is_stable_and_does_not_use_condition_or_global_rng():
     assert before[2:] == after[2:]
 
 
-@pytest.mark.parametrize("config", [IDENTITY, RFF, TILE])
-def test_empty_controller_state_stays_empty_without_constant_block(config):
-    adapter = make(config, dimension=0)
-    state = np.empty(0, dtype=np.float64)
-    output = adapter.transform(state)
-    assert output.shape == (0,)
-    assert adapter.metadata().block_dim == 0
+def test_complete_controller_input_must_include_at_least_observation_and_bias():
+    with pytest.raises(ValueError, match="complete controller input"):
+        make(IDENTITY, dimension=0)
 
 
 def test_tile_coding_has_eight_deterministic_activations_and_collision_accumulation(
@@ -96,6 +90,7 @@ def test_tile_coding_has_eight_deterministic_activations_and_collision_accumulat
     indices = first.tile_indices(state)
     assert indices.shape == (TILE_NUM_TILINGS,)
     np.testing.assert_array_equal(indices, second.tile_indices(state))
+    assert not np.array_equal(first._salts, make(TILE, seed=5)._salts)
     output = first.transform(state)
     assert output.shape == (len(state) + TILE_TABLE_SIZE,)
     np.testing.assert_array_equal(output[: len(state)], state)
@@ -114,8 +109,8 @@ def test_tile_coding_has_eight_deterministic_activations_and_collision_accumulat
 @pytest.mark.parametrize(
     "config, message",
     [
-        ({"name": "learned", "scope": "controller_state"}, "name"),
-        ({"name": "identity", "scope": "observation"}, "scope"),
+        ({"name": "learned"}, "name"),
+        ({"name": "identity", "scope": "controller_state"}, "unknown"),
         ({**RFF, "width": 32}, "width"),
         ({**RFF, "frequency_scale": 0.5}, "frequency_scale"),
         ({**TILE, "table_size": 128}, "table_size"),

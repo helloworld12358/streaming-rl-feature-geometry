@@ -1,105 +1,93 @@
-# 固定非线性 utilization adapter 实验指南
+# 固定非线性 Utilization Adapter 实验指南
 
-## 修改前审计
+## 科学边界与接入点
 
-本轮从 `codex/fix-streaming-rl-production-root-causes` 的精确提交
-`a638ac62a6a9b1727f0dbe60bb1fdb9e0478da86` 创建本地分支
-`codex/add-utilization-adapters`。切分支前 tracked 与 index 均为空；唯一未跟踪目录
-`paper_from_existing_results/` 保持不变。修改前完整测试为 `122 passed`。
+本扩展不改变环境、GVF questions/horizons、predictor、representation transform、continuing on-policy SARSA(λ) 或原在线更新顺序。每个 transition 只处理一次；没有 replay、minibatch、future fitting、神经网络、MLP 或 GPU 依赖。Oracle state 只允许进入 oracle condition，latent/probe 只用于诊断。
 
-1. 跨环境 controller input 原为 `[o_t, s_t, 1]`；core T-maze 的 oracle 特例也等价于该定义。
-2. 拼接顺序固定为 observation、controller state、bias。
-3. `observation_only` 的 state 是空向量；oracle state 只在 oracle condition 读取；其他 condition 只使用在线预测/变换 state。core 的 `trace_only` 直接使用固定 trace state。
-4. 每个 transition 的因果顺序是：用当前 state 选动作，environment step，predictor update，构造下一预测与 transform，构造下一 controller state，选下一动作，执行 accumulating-trace SARSA(λ) update。probe 不反馈训练。
-5. environment 使用 run seed，predictor 使用 `seed + 17`，controller 使用 `seed + 31`，diagnostic reservoir 使用独立 seed。
-6. 现有 `norm_scaled` SARSA(λ) 使用仅含当前/过去 feature squared norm 的 EMA，并在已登记上下界内得到 effective alpha。
-7. core/cross 配置加载器均 fail closed；新 adapter 配置也拒绝未知名称、scope、字段或非固定超参数。
-8. 旧 `compact_v2` 继续有效且默认行为不变；新实验使用独立 `adapter_summary_v1`。
-9. 现有 runner 使用 process-level multiprocessing，未增加第二套 scheduler。
-10. cross runner 的 resume/retry-invalid 会核对 config、commit、schema、identity、required files 与 runtime validity；失败证据先归档再重跑。
-11. core T-maze v3 使用 continuing T-maze、固定 `trace_only`、20,000 interactions、decision-time junction trial，以及末 200 trials accuracy；本轮 formal adapter controller 改为统一 norm-scaled，旧 fixed-alpha 结果不作为 identity baseline。
-12. 仓库没有可直接复用的新 commit norm-scaled formal result root。Stage A 必须由用户通过 `--baseline-root` 提供；缺失、重复或任一逐字段不兼容都会在新 RFF run 启动前停止。
-
-## Controller input 与 adapter
-
-修改后的唯一控制器输入定义为：
+旧 controller 的完整输入先按原顺序构造：
 
 ```text
-[observation, adapter(controller_state), bias]
+x_t = [observation_t, condition-specific state_t, bias=1]
+h_t = adapter(x_t)
+action/update = linear SARSA(lambda)(h_t)
 ```
 
-adapter 只接收当前 `controller_state`，不接收 observation、action、reward、future sample、latent label 或 probe output。三个固定选项为：
+adapter 只能读取当前 `x_t`。它不读取 reward、future observation/transition、latent label 或 probe 输出。bias 位于完整输入最后一维，并同时保留在 residual 原始分支中。
 
-- `identity`：严格返回原 state，不复制、不 cast、不使用 RNG、不更新状态。
-- `residual_rff`：`[s, sqrt(2/64) cos(Ws+b)]`，width 64，frequency scale 1.0；`W` 与 `b` 在 run 内只读。
-- `tile_coding`：`[s, tile(s)]`，8 tilings、512 table entries、4 tiles per unit，每个 active increment 为 `1/sqrt(8)`，collision 累加。
+三个固定 adapter：
 
-空 state 对三个 adapter 都返回空向量，因此 observation-only 没有 RFF 或 tile 常量块。RFF 与 tile seed 使用
-SHA-256 从 adapter version、environment、run seed 派生，不包含 condition，也不改变 environment、predictor 或 controller RNG。
+- `identity`: `h_t = x_t`，返回同一 float64 ndarray，不创建 RNG。
+- `residual_rff`: `h_t = [x_t, sqrt(2/64) cos(Wx_t+b)]`；`W ~ N(0,1)`、`b ~ U(0,2π)`，width=64、scale=1、residual=true。
+- `tile_coding`: `h_t = [x_t, Tile(x_t)]`；8 tilings、512-entry stable-hash table、4 tiles/unit，每个 tiling 的增量为 `1/sqrt(8)`，collision 累加。
 
-## 正式矩阵与复用
+RFF/Tile seed 只由 environment 与 run seed 的稳定 SHA-256 派生，不含 condition；它使用独立 `numpy.random.Generator`，不消费 environment、predictor、transform 或 controller 的随机流。adapter 参数只读且没有 update。
 
-| Stage | Logical cells | Baseline identity | Structural no-op | Stage A reuse | New runs |
-|---|---:|---:|---:|---:|---:|
-| A | 1120 | 560 | 80 | 0 | 480 |
-| B1 | 120 | 0 | 20 | 0 | 100 |
-| B2 | 150 | 0 | 20 | 90 | 40 |
-| Total | 1390 | 560 | 120 | 90 | 620 |
+## 参数来源
 
-Stage A 只包含 `tmaze`、`ringworld`、`two_loop`、`hidden_velocity`；明确不包含
-`hidden_velocity_informative`。其科学字段逐项取自
-`configs/cross_extension_norm_scaled_full.json`。Stage B1 是 core T-maze 的
-`observation_only/raw/trace_only/oracle`。Stage B2 是 hidden velocity 的
-`observation_only/raw/whitened/matched/oracle`。
+- Stage A：从 `configs/cross_full.json` 的 fixed-alpha 正式源复制四环境的 interactions、final window、seeds、controller/predictor、GVF bank/horizons、transform 与 environment kwargs，只选择预注册的七个 conditions。
+- Stage B1：从 core T-maze v3/pilot 源复制 20,000 interactions、末 200 trials accuracy、fixed alpha、trace-only 定义与 predictor/controller 参数；固定使用正式 seed 列表前 10 个。
+- Stage B2：从 Stage A 的 hidden-velocity fixed-alpha 源复制参数，使用与 B1 相同的 10 seeds。
 
-baseline validator 核对 environment、condition、seed、interactions、final window、environment kwargs、horizons、GVF bank、predictive alpha、gamma、lambda、epsilon、base control alpha、norm scaling、transform 参数、controller input identity、config hash、source commit、runtime validity 与 run status。它不会硬编码历史 run name，也不会把旧 `cross-full-2940182f41c9` 当兼容 baseline。
+不得按 adapter 调 alpha，不得 clipping、自动降参、fallback identity 或根据 smoke 结果改正式参数。
 
-## 本地 smoke、存储 pilot 与 dry-run
+## 正式矩阵
 
-本地短 smoke 覆盖四个环境、三个 adapter 与
-`observation_only/raw/matched/oracle`，每个 run 600 interactions，不生成正式图：
+| Stage | 逻辑矩阵 | Logical cells | 无 baseline 时新 runs |
+|---|---:|---:|---:|
+| A | 4 env × 7 condition × 2 adapter × 20 seed | 1120 | 1120 |
+| B1 | 4 condition × 3 adapter × 10 seed | 120 | 120 |
+| B2 | 5 condition × 3 adapter × 10 seed | 150 | 50（在同一计划中严格复用 A 的 100 个 identity/RFF cell） |
+| Total |  | 1390 | 1290 |
 
-```bash
-python scripts/run_utilization_experiment.py \
-  --stage smoke --run-name utilization-smoke --workers 4
+若 Stage A 的 560 个历史 identity cell 全部兼容，则总新 runs 为 730：B1 的 40 个 identity、Stage A/B1 的 600 个 RFF、B1/B2 的 90 个 Tile。任何复用都由逐 cell 签名验证决定，不能硬编码认定。
+
+## Baseline 与跨阶段复用
+
+`scripts/validate_utilization_baseline.py` 和 launcher 的 `--baseline-root` 对每个候选 identity cell 检查 environment、condition、seed、interactions、final window、gamma/lambda/epsilon、control/predictive alpha、alpha mode、GVF bank/horizons、transform、完整 controller input、environment kwargs、evaluation、identity semantics、schema、config hash、source commit、manifest/runtime validity 和 run status。
+
+候选 `cross-full-2940182f41c9` 不会被自动接受。缺失、重复或不兼容时记录具体字段和两侧值，将 identity 加入 pending；旧结果不会被修改。B2 通过 `--stage-a-root` 对 Stage A identity/RFF 做同样的规范化逐字段验证，只有完全一致才复用。
+
+## 配置和工具
+
+- Stage 0：`configs/utilization_adapter_smoke.json`
+- Storage pilot：`configs/utilization_storage_pilot.json`
+- Stage A：`configs/utilization_stage_a_full.json`
+- Stage B1：`configs/utilization_stage_b1_full.json`
+- Stage B2：`configs/utilization_stage_b2_full.json`
+- Launcher：`scripts/run_utilization_experiment.py`
+- Baseline validator：`scripts/validate_utilization_baseline.py`
+- Storage report：`scripts/report_utilization_storage.py`
+- Integrity audit：`scripts/audit_utilization_results.py`
+- Aggregation：`scripts/aggregate_utilization_results.py`
+- Plotting：`scripts/plot_utilization_results.py`
+
+正式 run 使用 `adapter_summary_v1`，每个 run 仅保存 `config.json`、`manifest.json`、`runtime_validity.json`、`summary.json`、`summary.csv` 和 `stdout.log`。默认不保存逐步 observations、predictive vectors、weights trajectory、NPZ 或 per-seed figures。
+
+## 本地验证
+
+```powershell
+python -m pytest -q tests/test_utilization_adapters.py tests/test_utilization_experiment.py
+python -m pytest -q
+python scripts/run_utilization_experiment.py --stage smoke --workers 4 --run-name local-utilization-smoke --output-root results/utilization_adapters --dry-run
+python scripts/run_utilization_experiment.py --stage stage-a --run-name dry-stage-a --dry-run
+python scripts/run_utilization_experiment.py --stage stage-b1 --run-name dry-stage-b1 --dry-run
+python scripts/run_utilization_experiment.py --stage stage-b2 --run-name dry-stage-b2 --dry-run
+python scripts/run_utilization_experiment.py --stage all --run-name dry-all --dry-run
 ```
 
-用真实 smoke run 生成轻量存储报告：
+本地只允许运行 tests、smoke、storage pilot 和 dry-run。Stage A/B1/B2 正式运行必须同时具有 `RL_RUN_CONTEXT=remote` 和 `--allow-full-run`，且必须传入真实 `--storage-report`。baseline 缺失不会绕过 full-run guard，也不会在本地自动启动正式 identity。
 
-```bash
-python scripts/report_utilization_storage.py \
-  --run-root results/utilization_adapters/utilization-smoke \
-  --output artifacts/utilization-smoke/storage_report.json \
-  --inventory-csv artifacts/utilization-smoke/storage_inventory.csv
-```
+## 审计、聚合与四图
 
-正式 dry-run 允许在本地运行，但 baseline 缺失时预期返回非零并只报告缺口，不启动实验：
+每个 stage 完成后 launcher 生成 `run_manifest.json`、`run_summaries.csv`、`aggregate_performance.csv`、`paired_adapter_differences.csv`、`runtime_summary.csv`、`reuse_validation.csv`、`failed_runs.csv` 和 `experiment_summary.md`。
 
-```bash
-python scripts/run_utilization_experiment.py \
-  --stage all --run-name utilization-formal --dry-run \
-  --baseline-root /path/to/completed-new-commit-norm-scaled-suite \
-  --storage-report artifacts/utilization-smoke/storage_report.json
-```
+全局聚合前必须运行 `scripts/audit_utilization_results.py`；它检查 expected/completed/valid/invalid/failed/incomplete、duplicate/extra、错误 axes/seeds、commit/config 混合、runtime validity、paired identity coverage 与 NaN/Inf/divergence。审计失败时禁止聚合。
 
-## 远端正式运行
+正式只生成四张 PNG：
 
-formal 只能在 CPU 环境执行，并且必须同时提供双 gate、真实 storage report 与 baseline root：
+1. 四环境 Stage A identity/RFF mean ± SEM；
+2. 各 environment × condition 的 paired RFF−identity，正值代表 RFF 更好；
+3. Core T-maze 的 trace identity/RFF/Tile 与 oracle identity，指标为末 200 trials accuracy；
+4. Hidden velocity raw/whitened/matched 的 identity/RFF/Tile，指标为 final-window reward。
 
-```bash
-RL_RUN_CONTEXT=remote bash scripts/run_utilization_remote.sh \
-  --stage all \
-  --allow-full-run \
-  --baseline-root /path/to/completed-new-commit-norm-scaled-suite \
-  --storage-report artifacts/utilization-smoke/storage_report.json \
-  --run-name utilization-formal-<COMMIT_SHA> \
-  --workers 16
-```
-
-`all` 严格按 Stage A、B1、B2 顺序执行；只在单一 stage 内并行。支持重复
-`--stage`、`--resume` 和 `--retry-invalid`。不得使用 GPU，不得在本地伪装 remote gate，
-不得在 baseline 缺失时自行补跑 identity full。
-
-每个新 run 只保存 `config.json`、`manifest.json`、`runtime_validity.json`、
-`summary.json`、`summary.csv` 和 `stdout.log`。阶段聚合只保存登记的 CSV/JSON/Markdown；
-完整 formal 聚合只生成四张登记图。
+不生成 per-seed 图，不跨环境平均原始 performance，不使用统计显著性语言。负面、无改善、invalid 和 failed 证据必须保留。

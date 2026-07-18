@@ -25,15 +25,14 @@
   "accuracy_threshold": 0.8,
   "workers": 16,
   "nonstationary": false,
-  "controller_alpha_mode": "norm_scaled",
-  "controller_alpha_norm": {"ema_beta": 0.01, "epsilon": 0.000001, "alpha_min": 0.000001, "alpha_max_multiplier": 1.0},
+  "controller_alpha_mode": "fixed",
   "storage_schema": "adapter_summary_v1",
   "extreme_finite_limit": 1000000000000.0,
   "remote_full": true,
   "utilization_adapters": [
-    {"name": "identity", "scope": "controller_state"},
-    {"name": "residual_rff", "scope": "controller_state", "width": 64, "frequency_scale": 1.0, "residual": true},
-    {"name": "tile_coding", "scope": "controller_state", "num_tilings": 8, "table_size": 512, "tiles_per_unit": 4.0, "residual": true}
+    {"name": "identity"},
+    {"name": "residual_rff", "width": 64, "frequency_scale": 1.0, "residual": true},
+    {"name": "tile_coding", "num_tilings": 8, "table_size": 512, "tiles_per_unit": 4.0, "residual": true}
   ],
   "output_dir": "results/utilization_adapters"
 }

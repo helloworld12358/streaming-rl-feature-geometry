@@ -1,11 +1,10 @@
 {
   "profile": "utilization_stage_b2_full",
-  "experiment_stage": "norm_scaled",
-  "controller_alpha_mode": "norm_scaled",
+  "experiment_stage": "fixed",
+  "controller_alpha_mode": "fixed",
   "storage_schema": "adapter_summary_v1",
   "result_schema_version": 1,
   "enforce_repository_containment": true,
-  "controller_alpha_norm": {"ema_beta": 0.01, "epsilon": 0.000001, "alpha_min": 0.000001, "alpha_max_multiplier": 1.0},
   "remote_full": true,
   "seeds": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
   "seed_sets": {"pilot": [200, 201, 202, 203, 204], "tuning": [100, 101, 102, 103, 104], "evaluation": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19], "smoke": [9000, 9001]},
@@ -24,9 +23,9 @@
   "robust_bootstrap_samples": 2000, "robust_bootstrap_seed": 1729,
   "catastrophic_failure": {"global": {"max_control_update_norm_above": 100.0}, "environments": {"hidden_velocity": {"final_window_reward_below": -6.0, "final_window_stabilization_rate_below": 0.005, "final_window_position_rmse_above": 2.4}}},
   "utilization_adapters": [
-    {"name": "identity", "scope": "controller_state"},
-    {"name": "residual_rff", "scope": "controller_state", "width": 64, "frequency_scale": 1.0, "residual": true},
-    {"name": "tile_coding", "scope": "controller_state", "num_tilings": 8, "table_size": 512, "tiles_per_unit": 4.0, "residual": true}
+    {"name": "identity"},
+    {"name": "residual_rff", "width": 64, "frequency_scale": 1.0, "residual": true},
+    {"name": "tile_coding", "num_tilings": 8, "table_size": 512, "tiles_per_unit": 4.0, "residual": true}
   ],
   "output_dir": "results/utilization_adapters"
 }

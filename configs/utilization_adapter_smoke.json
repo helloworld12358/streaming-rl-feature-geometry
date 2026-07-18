@@ -1,10 +1,9 @@
 {
   "profile": "utilization_adapter_smoke",
-  "experiment_stage": "norm_scaled",
-  "controller_alpha_mode": "norm_scaled",
+  "experiment_stage": "fixed",
+  "controller_alpha_mode": "fixed",
   "storage_schema": "adapter_summary_v1",
   "result_schema_version": 1,
-  "controller_alpha_norm": {"ema_beta": 0.01, "epsilon": 0.000001, "alpha_min": 0.000001, "alpha_max_multiplier": 1.0},
   "remote_full": false,
   "seeds": [9000],
   "environments": {
@@ -22,9 +21,9 @@
   "metrics_stride": 100, "analysis_burn_in": 100, "reservoir_size": 64,
   "moving_window": 100, "final_window": 200, "workers": 4,
   "utilization_adapters": [
-    {"name": "identity", "scope": "controller_state"},
-    {"name": "residual_rff", "scope": "controller_state", "width": 64, "frequency_scale": 1.0, "residual": true},
-    {"name": "tile_coding", "scope": "controller_state", "num_tilings": 8, "table_size": 512, "tiles_per_unit": 4.0, "residual": true}
+    {"name": "identity"},
+    {"name": "residual_rff", "width": 64, "frequency_scale": 1.0, "residual": true},
+    {"name": "tile_coding", "num_tilings": 8, "table_size": 512, "tiles_per_unit": 4.0, "residual": true}
   ],
   "output_dir": "results/utilization_adapters_smoke"
 }

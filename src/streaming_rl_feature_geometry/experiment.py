@@ -189,12 +189,22 @@ def diagnostic_state(
 def _manifest_base(
     config: dict[str, Any], condition: str | None = None, seed: int | None = None
 ) -> dict[str, Any]:
+    commit = git_value("rev-parse", "HEAD")
+    adapter = normalize_adapter_config(config.get("utilization_adapter"))
     return {
-        "git_commit": git_value("rev-parse", "HEAD"),
+        "git_commit": commit,
+        "source_commit": commit,
         "git_branch": git_value("branch", "--show-current"),
         "git_dirty": bool(git_value("status", "--porcelain")),
         "exact_command": [Path(sys.executable).name, *sys.argv],
         "profile": config["profile"],
+        "run_id": (
+            None
+            if condition is None or seed is None
+            else f"tmaze/{condition}/{adapter['name']}/seed_{int(seed):03d}"
+        ),
+        "environment": "tmaze",
+        "representation": condition,
         "condition": condition,
         "seed": seed,
         "python_version": platform.python_version(),
@@ -205,15 +215,30 @@ def _manifest_base(
         "predictive_bank": config.get("gvf_bank", "mixed"),
         "horizons": list(config.get("horizons", [])),
         "interaction_budget": int(config["total_interactions"]),
+        "final_window": int(config.get("final_window_trials", 200)),
+        "control_alpha": config.get("control_alpha"),
+        "predictive_alpha": config.get("gvf_alpha"),
+        "gamma": config.get("gamma"),
+        "lambda": config.get("lambda"),
+        "epsilon": config.get("epsilon"),
+        "environment_kwargs": {
+            "corridor_length": int(config.get("corridor_length", 5))
+        },
         "cpu_count": os.cpu_count(),
         "cpu_model": os.environ.get("RL_REMOTE_CPU_MODEL", platform.processor() or "unknown"),
         "gpu_detection": os.environ.get("RL_REMOTE_GPU_DETECTION", "not-recorded"),
         "gpu_backend_used": "none",
         "parallelism": "cpu-process",
         "storage_schema": config.get("storage_schema", "legacy_csv"),
+        "result_schema": config.get("storage_schema", "legacy_csv"),
+        "result_schema_version": int(config.get("result_schema_version", 1)),
         "controller_alpha_mode": config.get("controller_alpha_mode", "fixed"),
-        "utilization_adapter": normalize_adapter_config(config.get("utilization_adapter")),
-        "controller_input_definition": "observation_plus_adapted_controller_state_plus_bias_v1",
+        "controller_alpha_norm": config.get("controller_alpha_norm", {}),
+        "utilization_adapter": adapter,
+        "controller_input_definition": (
+            "adapter_of_complete_controller_input_"
+            "observation_then_condition_state_then_bias_v2"
+        ),
     }
 
 
@@ -342,14 +367,14 @@ def _execute_run(
         else np.empty(0, dtype=np.float64)
     )
     state = controller_state(trace, transformed, condition, env.cue)
+    controller_input = controller_features(observation, state, condition, env.cue)
     adapter = make_utilization_adapter(
         config.get("utilization_adapter"),
         environment="tmaze",
         run_seed=seed,
-        input_dim=len(state),
+        input_dim=len(controller_input),
     )
-    adapted_state = adapter.transform(state)
-    features = controller_features(observation, adapted_state, condition, env.cue)
+    features = adapter.transform(controller_input)
     adapter_metadata = adapter.metadata().as_dict()
     adapter_metadata["final_controller_dim"] = len(features)
     if manifest is not None:
@@ -426,11 +451,11 @@ def _execute_run(
             else np.empty(0, dtype=np.float64)
         )
         next_state = controller_state(next_trace, next_transformed, condition, env.cue)
+        next_controller_input = controller_features(
+            next_observation, next_state, condition, env.cue
+        )
         try:
-            next_adapted_state = adapter.transform(next_state)
-            next_features = controller_features(
-                next_observation, next_adapted_state, condition, env.cue
-            )
+            next_features = adapter.transform(next_controller_input)
         except (FloatingPointError, OverflowError, np.linalg.LinAlgError) as error:
             tracker.record_exception(
                 interaction,
@@ -461,8 +486,8 @@ def _execute_run(
             {
                 "controller_features": features,
                 "next_controller_features": next_features,
-                "adapted_controller_state": adapted_state,
-                "next_adapted_controller_state": next_adapted_state,
+                "controller_input": controller_input,
+                "next_controller_input": next_controller_input,
                 "predictive_parameters": gvf.w,
                 "controller_parameters": controller.w,
                 "controller_eligibility_trace": controller.e,
@@ -542,7 +567,7 @@ def _execute_run(
         predictions = next_predictions
         trace = next_trace
         transformed = next_transformed
-        adapted_state = next_adapted_state
+        controller_input = next_controller_input
         features = next_features
         action = next_action
 
