@@ -1051,6 +1051,10 @@ def run_experiment(
         raise RuntimeError("formal utilization run requires RL_RUN_CONTEXT=remote and --allow-full-run")
     if formal and storage_report is None:
         raise RuntimeError("formal utilization run requires --storage-report from a real pilot")
+    if formal and not report["launch_allowed"]:
+        raise RuntimeError(
+            "formal utilization run blocked: projected peak plus 10 GiB exceeds free space"
+        )
     if formal:
         safe_max, effective_cpus, quota = safe_worker_limit()
         if workers < 1 or workers > safe_max:

@@ -164,7 +164,9 @@ def test_formal_aggregation_generates_only_four_registered_figures(tmp_path):
     }
 
 
-def test_formal_guard_fails_locally_but_missing_baseline_is_a_valid_remote_plan(tmp_path):
+def test_formal_guard_fails_locally_and_storage_preflight_is_fail_closed(
+    tmp_path, monkeypatch
+):
     report_path = tmp_path / "storage.json"
     write_json(
         report_path,
@@ -182,6 +184,37 @@ def test_formal_guard_fails_locally_but_missing_baseline_is_a_valid_remote_plan(
             resume=False, retry_invalid=False,
         )
     assert not (tmp_path / "blocked").exists()
+    write_json(
+        report_path,
+        {
+            "schema": "adapter_storage_pilot_v1",
+            "status": "valid",
+            "pilot_runs": 3,
+            "adapter_summary_bytes_per_run": 1000000000000,
+            "bytes_per_run_by_adapter": {
+                "identity": 1000000000000,
+                "residual_rff": 1000000000000,
+                "tile_coding": 1000000000000,
+            },
+        },
+    )
+    monkeypatch.setenv("RL_RUN_CONTEXT", "remote")
+    with pytest.raises(RuntimeError, match="projected peak plus 10 GiB"):
+        run_experiment(
+            ["stage-a"], baseline_root=None, workers=1, run_name="storage-blocked",
+            output_root=tmp_path, storage_report=report_path, allow_full_run=True,
+            resume=False, retry_invalid=False,
+        )
+    assert not (tmp_path / "storage-blocked").exists()
+    write_json(
+        report_path,
+        {
+            "schema": "adapter_storage_pilot_v1",
+            "status": "valid",
+            "pilot_runs": 1,
+            "adapter_summary_bytes_per_run": 1000,
+        },
+    )
     report = dry_run_report(["stage-a"], baseline_root=None, storage_report=report_path)
     assert report["new_pending_runs"] == 1120
     assert report["missing_baseline_cells"] == 560
