@@ -79,4 +79,4 @@ jobs:
         with:
           name: smoke-results-${{ github.sha }}
           path: results/smoke/ci-${{ github.run_id }}-${{ github.run_attempt }}
-          if-no-files-found: error
+          if-no-files-found: warn

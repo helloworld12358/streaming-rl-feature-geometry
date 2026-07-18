@@ -22,7 +22,7 @@ if [[ -n "$DRY_RUN" && "$DRY_RUN" != "--dry-run" ]]; then
   exit 2
 fi
 
-ARGS=(scripts/run_remote_full.sh \
+ARGS=(bash scripts/run_remote_full.sh \
   --allow-full-run \
   --config "configs/${PROFILE}.json" \
   --workers "$WORKERS" \

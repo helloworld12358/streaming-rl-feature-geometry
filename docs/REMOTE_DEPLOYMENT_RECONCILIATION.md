@@ -35,6 +35,7 @@
 - production extension smoke `70/70`、manifest=`ok`、CPU process-level、GPU backend=`none`；
 - 37 个 JSON config、14 个 shell 脚本的本地语法解析、compileall、`git diff --check`、敏感信息与大文件扫描均通过；
 - Windows 本机没有可用 Linux Bash/shellcheck；Ubuntu CI 已增加全部 shell 的 `bash -n`、one-click dry-run 和 9-batch suite dry-run，必须在 push 后核对；
+- 首次 push 的 Ubuntu run `29633409361` 在 legacy `run_remote.sh` compatibility probe 返回 126，原因是直接 exec 未设置 Git executable bit 的目标脚本；修复为显式 `bash` 调用并保留该失败 run 作为证据；
 - 未在本地运行 formal remote full；`.runtime/` 和 smoke 结果保持 ignored；`paper_from_existing_results/` 仍未读取、未修改、未纳入任务 diff。
 
 本节是当前 Goal 的起始与决策记录；下面较早的 `codex/remote-deployment` 内容保留为历史，不代表当前 branch/commit 或当前测试计数。
