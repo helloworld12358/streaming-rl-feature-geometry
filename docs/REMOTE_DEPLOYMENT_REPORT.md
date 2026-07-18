@@ -14,6 +14,7 @@
 - 37 个 JSON config 全部解析；tree-sitter-bash 对 14 个 shell 脚本均无语法错误；`git diff --check`、compileall 和敏感信息扫描通过；tracked 文件中无 token、AWS key、private key、密码赋值或 IPv4 地址，无大于 5 MiB 文件；
 - 当前 Windows 没有可用 Linux Bash/shellcheck，所以真正的 `bash -n`、one-click dry-run 和 9-batch suite dry-run 已加入 Ubuntu CI，推送后以该 CI 结果为发布证据；
 - 首次 push 的 Ubuntu run `29633409361` 在最后一个 legacy compatibility probe 返回 126：`run_remote.sh` 直接 exec 了没有 Git executable bit 的目标脚本；前置步骤已经完成。后续 commit 改为显式 `bash scripts/run_remote_full.sh`，失败时缺少 smoke artifact 只告警，最终发布状态以修复后的 CI run 为准；
+- 修复 commit `957784d8d40df6d61bd430307e554635ba18df88` 的 Ubuntu run `29633542079` 最终为 `success`：真实 `bash -n`、全部 remote dry-run、pytest、CI smoke、结果验证和 artifact upload 均通过；
 - formal 4200-run remote full 未在本地执行。本地新增 smoke 位于被 `.gitignore` 排除的 `results/bootstrap_smoke/deployment-refresh-20260718`，不提交原始结果。
 
 `--workers` 是实际 CPU 进程数：扩大云实例核数但仍显式传入 `--workers 16` 时，程序仍只启动 16 个 worker。要利用新增核心，只需按 cgroup quota 调整该参数；GPU 型号和卡数不会改善当前线性 NumPy 工作负载。
