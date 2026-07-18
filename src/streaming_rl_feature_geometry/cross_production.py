@@ -35,6 +35,8 @@ ANALYSIS_FILENAMES = {
     "aggregate_decision_probe_by_position.csv",
     "robust_condition_summary.csv",
     "selected_learning_rates.csv",
+    "invalid_tuning_candidates.csv",
+    "invalid_tuning_candidates.json",
     "catastrophic_failure_summary.csv",
     "config.json",
     "manifest.json",
@@ -136,7 +138,12 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _analysis_manifest(root: Path, config: dict[str, Any], summaries: pd.DataFrame) -> dict[str, Any]:
+def _analysis_manifest(
+    root: Path,
+    config: dict[str, Any],
+    summaries: pd.DataFrame,
+    validation: dict[str, Any],
+) -> dict[str, Any]:
     aggregate_files = [
         path
         for path in root.iterdir()
@@ -147,15 +154,13 @@ def _analysis_manifest(root: Path, config: dict[str, Any], summaries: pd.DataFra
     if (root / "figures").is_dir():
         aggregate_files.extend(path for path in (root / "figures").rglob("*") if path.is_file())
     aggregate_files.sort()
-    return {
+    result = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "git_commit": git_value("rev-parse", "HEAD"),
         "git_branch": git_value("branch", "--show-current"),
         "config_hash": config_hash(config),
         "profile": config["profile"],
         "experiment_stage": config.get("experiment_stage", "fixed"),
-        "expected_runs": expected_cross_run_count(config),
-        "observed_runs": int(len(summaries)),
         "catastrophic_failures": int(summaries["catastrophic_failure"].sum()),
         "files": [
             {
@@ -166,16 +171,45 @@ def _analysis_manifest(root: Path, config: dict[str, Any], summaries: pd.DataFra
             for path in aggregate_files
         ],
     }
+    if config.get("experiment_stage") == "lr_tune":
+        result.update(
+            expected_attempts=int(validation["expected_attempts"]),
+            attempted_candidates=int(validation["attempted_candidates"]),
+            valid_runs=int(validation["valid_runs"]),
+            invalid_attempts=int(validation["invalid_attempts"]),
+        )
+    else:
+        result.update(
+            expected_runs=expected_cross_run_count(config),
+            observed_runs=int(len(summaries)),
+        )
+    return result
 
 
-def _write_chinese_summary(root: Path, config: dict[str, Any], summaries: pd.DataFrame) -> None:
+def _write_chinese_summary(
+    root: Path,
+    config: dict[str, Any],
+    summaries: pd.DataFrame,
+    validation: dict[str, Any],
+) -> None:
     failure_count = int(summaries["catastrophic_failure"].sum())
+    if config.get("experiment_stage") == "lr_tune":
+        completion_lines = [
+            "- 完成 candidate attempt："
+            f"{validation['attempted_candidates']} / {validation['expected_attempts']}",
+            f"- 有效 run：{validation['valid_runs']}",
+            f"- 无效 candidate attempt：{validation['invalid_attempts']}",
+        ]
+    else:
+        completion_lines = [
+            f"- 完成 run：{len(summaries)} / {expected_cross_run_count(config)}"
+        ]
     lines = [
         "# Cross-extension 结果摘要",
         "",
         f"- Profile：`{config['profile']}`",
         f"- 阶段：`{config.get('experiment_stage', 'fixed')}`",
-        f"- 完成 run：{len(summaries)} / {expected_cross_run_count(config)}",
+        *completion_lines,
         f"- Catastrophic failure：{failure_count}",
         "- whitening 是二阶变换；gaussian_moment 是无分布保证的在线矩塑形探索项。",
         "- 本摘要只陈述完整性与文件位置，不把尚未审阅的数值解释为正结果。",
@@ -239,8 +273,8 @@ def aggregate_and_validate(
                 raise AssertionError(
                     f"evaluation alpha mismatch for {row.environment}/{row.condition}"
                 )
-    _write_chinese_summary(root, config, summaries)
-    analysis_manifest = _analysis_manifest(root, config, summaries)
+    _write_chinese_summary(root, config, summaries, validation)
+    analysis_manifest = _analysis_manifest(root, config, summaries, validation)
     write_json(root / "analysis_manifest.json", analysis_manifest)
     return {**validation, "analysis_manifest": str((root / "analysis_manifest.json").resolve())}
 

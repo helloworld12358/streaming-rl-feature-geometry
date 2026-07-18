@@ -44,6 +44,11 @@ class RuntimeValidityError(FloatingPointError):
             f"(threshold={failure.threshold:g})"
         )
 
+    def __reduce__(self) -> tuple[type[RuntimeValidityError], tuple[RuntimeFailure]]:
+        """Rebuild from the structured failure instead of BaseException.args."""
+
+        return type(self), (self.failure,)
+
 
 def _scalars(value: Any) -> np.ndarray:
     if value is None:

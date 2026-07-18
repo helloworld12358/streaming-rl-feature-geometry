@@ -13,6 +13,7 @@ import shutil
 import socket
 import sys
 import time
+import traceback
 from collections import deque
 from datetime import datetime, timezone
 from multiprocessing import Pool, cpu_count
@@ -141,6 +142,40 @@ COMPACT_RUN_REQUIRED_ENTRIES = {
     "stdout.log",
     "figures",
     *COMPACT_TRACE_FILES,
+}
+INVALID_TUNING_COLUMNS = [
+    "environment",
+    "condition",
+    "seed",
+    "candidate_alpha",
+    "base_alpha_multiplier",
+    "exit_status",
+    "failure_classification",
+    "metric",
+    "observed_value",
+    "threshold",
+    "interaction_index",
+    "manifest_path",
+    "runtime_validity_path",
+    "config_hash",
+    "git_commit",
+    "result_schema_version",
+]
+RUNTIME_FAILURE_FIELDS = {
+    "environment",
+    "condition",
+    "seed",
+    "candidate_alpha",
+    "interaction_index",
+    "metric",
+    "observed_value",
+    "threshold",
+    "relevant_feature_norm",
+    "parameter_norm",
+    "update_norm",
+    "transform_state",
+    "error_type",
+    "failure_classification",
 }
 
 
@@ -1059,11 +1094,89 @@ def _task_run_dir(task: tuple[Any, ...]) -> Path:
     return base / f"seed_{seed:03d}"
 
 
+def _tuning_identity(
+    environment: str, condition: str, seed: int, candidate_alpha: float
+) -> tuple[str, str, int, str]:
+    return str(environment), str(condition), int(seed), _alpha_path(float(candidate_alpha))
+
+
+def _expected_tuning_identities(
+    config: dict[str, Any],
+) -> dict[tuple[str, str, int, str], dict[str, float]]:
+    expected: dict[tuple[str, str, int, str], dict[str, float]] = {}
+    for environment, specification in config["environments"].items():
+        base_alpha = float(specification.get("control_alpha", config["control_alpha"]))
+        alphas = candidate_alphas(
+            base_alpha, list(map(float, config["alpha_tuning"]["multipliers"]))
+        )
+        for condition in specification["conditions"]:
+            for alpha, multiplier in alphas:
+                for seed in config["seeds"]:
+                    identity = _tuning_identity(environment, condition, int(seed), alpha)
+                    if identity in expected:
+                        raise ValueError(f"duplicate configured tuning identity {identity}")
+                    expected[identity] = {
+                        "candidate_alpha": float(alpha),
+                        "base_alpha_multiplier": float(multiplier),
+                    }
+    return expected
+
+
+def _invalid_tuning_record(run_dir: Path, root: Path) -> dict[str, Any] | None:
+    manifest_path = run_dir / "manifest.json"
+    validity_path = run_dir / "runtime_validity.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if manifest.get("exit_status") != "invalid":
+        return None
+    try:
+        validity = json.loads(validity_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        validity = {}
+    failure = validity.get("first_failure")
+    if not isinstance(failure, dict):
+        failure = {}
+    return {
+        "environment": manifest.get("environment", failure.get("environment")),
+        "condition": manifest.get("condition", failure.get("condition")),
+        "seed": manifest.get("seed", failure.get("seed")),
+        "candidate_alpha": manifest.get(
+            "candidate_alpha", failure.get("candidate_alpha")
+        ),
+        "base_alpha_multiplier": manifest.get("base_alpha_multiplier"),
+        "exit_status": manifest.get("exit_status"),
+        "failure_classification": failure.get("failure_classification"),
+        "metric": failure.get("metric"),
+        "observed_value": failure.get("observed_value"),
+        "threshold": failure.get("threshold"),
+        "interaction_index": failure.get("interaction_index"),
+        "manifest_path": str(manifest_path.relative_to(root)),
+        "runtime_validity_path": str(validity_path.relative_to(root)),
+        "config_hash": manifest.get("config_hash"),
+        "git_commit": manifest.get("git_commit"),
+        "result_schema_version": manifest.get("result_schema_version"),
+    }
+
+
+def _read_invalid_tuning_attempts(root: Path) -> pd.DataFrame:
+    records = []
+    runs_root = root / "runs"
+    if runs_root.is_dir():
+        for manifest_path in sorted(runs_root.rglob("manifest.json")):
+            record = _invalid_tuning_record(manifest_path.parent, root)
+            if record is not None:
+                records.append(record)
+    return pd.DataFrame(records, columns=INVALID_TUNING_COLUMNS)
+
+
 def _completed_run(
     run_dir: Path,
     config: dict[str, Any] | None = None,
     expected_identity: tuple[str, str, int] | None = None,
     options: dict[str, Any] | None = None,
+    expected_commit: str | None = None,
 ) -> bool:
     if config is None:
         try:
@@ -1116,7 +1229,8 @@ def _completed_run(
         and manifest.get("config_hash") == config_hash(config)
         and int(manifest.get("result_schema_version", -1))
         == int(config.get("result_schema_version", COMPACT_SCHEMA_VERSION))
-        and manifest.get("git_commit") == git_value("rev-parse", "HEAD")
+        and manifest.get("git_commit")
+        == (expected_commit or git_value("rev-parse", "HEAD"))
         and summary.iloc[0].get("run_status") in {"ok", "valid"}
         and validity.get("status") == "valid"
         and validity.get("resume_eligible") is True
@@ -1125,6 +1239,82 @@ def _completed_run(
         and int(summary.iloc[0]["inf_count"]) == 0
         and int(summary.iloc[0]["divergence_flag"]) == 0
         and not (np.abs(values[:, :4]) > extreme_limit).any()
+    )
+
+
+def _completed_invalid_tuning_run(
+    run_dir: Path,
+    config: dict[str, Any],
+    expected_identity: tuple[str, str, int],
+    options: dict[str, Any],
+    expected_commit: str | None = None,
+) -> bool:
+    if config.get("experiment_stage") != "lr_tune":
+        return False
+    required = {
+        "config.json",
+        "manifest.json",
+        "runtime_validity.json",
+        "stdout.log",
+        "figures",
+    }
+    if not run_dir.is_dir() or not required <= {path.name for path in run_dir.iterdir()}:
+        return False
+    if (run_dir / "summary.csv").exists() or (run_dir / "summary.json").exists():
+        return False
+    try:
+        run_config = json.loads((run_dir / "config.json").read_text(encoding="utf-8"))
+        manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+        validity = json.loads((run_dir / "runtime_validity.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    environment, condition, seed = expected_identity
+    expected_alpha = options.get("candidate_alpha")
+    expected_multiplier = options.get("base_alpha_multiplier")
+    failure = validity.get("first_failure")
+    manifest_failure = manifest.get("first_failure")
+    if not isinstance(failure, dict) or not RUNTIME_FAILURE_FIELDS <= set(failure):
+        return False
+    if not isinstance(manifest_failure, dict) or json.dumps(
+        manifest_failure, sort_keys=True
+    ) != json.dumps(failure, sort_keys=True):
+        return False
+    try:
+        identity_matches = (
+            manifest.get("environment") == environment
+            and manifest.get("condition") == condition
+            and int(manifest.get("seed", -1)) == int(seed)
+            and failure.get("environment") == environment
+            and failure.get("condition") == condition
+            and int(failure.get("seed", -1)) == int(seed)
+            and expected_alpha is not None
+            and manifest.get("candidate_alpha") is not None
+            and failure.get("candidate_alpha") is not None
+            and np.isclose(float(manifest["candidate_alpha"]), float(expected_alpha))
+            and np.isclose(float(failure["candidate_alpha"]), float(expected_alpha))
+            and expected_multiplier is not None
+            and manifest.get("base_alpha_multiplier") is not None
+            and np.isclose(
+                float(manifest["base_alpha_multiplier"]), float(expected_multiplier)
+            )
+        )
+    except (TypeError, ValueError):
+        return False
+    return bool(
+        identity_matches
+        and manifest.get("exit_status") == "invalid"
+        and manifest.get("run_status") == "invalid"
+        and manifest.get("resume_eligible") is False
+        and manifest.get("error_type") == "RuntimeValidityError"
+        and validity.get("status") == "invalid"
+        and validity.get("resume_eligible") is False
+        and int(validity.get("divergence_flag", 0)) == 1
+        and config_hash(run_config) == config_hash(config)
+        and manifest.get("config_hash") == config_hash(config)
+        and int(manifest.get("result_schema_version", -1))
+        == int(config.get("result_schema_version", COMPACT_SCHEMA_VERSION))
+        and manifest.get("git_commit")
+        == (expected_commit or git_value("rev-parse", "HEAD"))
     )
 
 
@@ -1146,6 +1336,17 @@ def run_cross_one(task: tuple[Any, ...]) -> dict[str, Any]:
             run_dir, config, (environment, condition, seed), options
         ) and (options.get("resume") or options.get("retry_failed")):
             return pd.read_csv(run_dir / "summary.csv").iloc[0].to_dict()
+        if (
+            _completed_invalid_tuning_run(
+                run_dir, config, (environment, condition, seed), options
+            )
+            and options.get("resume")
+            and not options.get("retry_failed")
+        ):
+            record = _invalid_tuning_record(run_dir, root)
+            if record is None:
+                raise RuntimeError(f"completed invalid tuning evidence disappeared: {run_dir}")
+            return {"worker_status": "invalid_tuning_candidate", **record}
         manifest_path = run_dir / "manifest.json"
         failed = False
         if manifest_path.exists():
@@ -1192,12 +1393,14 @@ def run_cross_one(task: tuple[Any, ...]) -> dict[str, Any]:
         )
     except Exception as error:
         invalid = isinstance(error, RuntimeValidityError)
+        error_traceback = traceback.format_exc()
         manifest.update(
             end_time=datetime.now(timezone.utc).isoformat(),
             exit_status="invalid" if invalid else "failed",
             run_status="invalid" if invalid else "failed",
             error_type=type(error).__name__,
             error=str(error),
+            traceback=error_traceback,
             resume_eligible=False,
         )
         if invalid:
@@ -1205,7 +1408,7 @@ def run_cross_one(task: tuple[Any, ...]) -> dict[str, Any]:
         write_json(run_dir / "manifest.json", manifest)
         (run_dir / "stdout.log").write_text(
             f"failed environment={environment} condition={condition} seed={seed}\n"
-            f"{type(error).__name__}: {error}\n",
+            f"{type(error).__name__}: {error}\n{error_traceback}",
             encoding="utf-8",
         )
         raise
@@ -1218,6 +1421,35 @@ def run_cross_one(task: tuple[Any, ...]) -> dict[str, Any]:
     )
     write_json(run_dir / "manifest.json", manifest)
     return summary
+
+
+def run_cross_worker(task: tuple[Any, ...]) -> dict[str, Any]:
+    """Return structured tuning-invalid outcomes while propagating all other failures."""
+
+    config, environment, condition, seed, root_string, _ = _task_parts(task)
+    try:
+        result = run_cross_one(task)
+    except RuntimeValidityError:
+        if config.get("experiment_stage") != "lr_tune":
+            raise
+        root = Path(root_string)
+        run_dir = _task_run_dir(task)
+        record = _invalid_tuning_record(run_dir, root)
+        if record is None:
+            raise RuntimeError(
+                "lr-tune RuntimeValidityError did not leave structured invalid evidence "
+                f"for {environment}/{condition}/seed={seed}"
+            )
+        return {"worker_status": "invalid_tuning_candidate", **record}
+    if result.get("worker_status") == "invalid_tuning_candidate":
+        return result
+    return {
+        "worker_status": "valid",
+        "environment": environment,
+        "condition": condition,
+        "seed": seed,
+        "candidate_alpha": result.get("candidate_alpha"),
+    }
 
 
 def _read_many(paths: list[Path]) -> pd.DataFrame:
@@ -1244,6 +1476,213 @@ def _read_compact_many(paths: list[Path]) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True, sort=False) if frames else pd.DataFrame()
 
 
+def _validate_tuning_attempt_coverage(
+    root: Path,
+    config: dict[str, Any],
+    summaries: pd.DataFrame,
+    invalid: pd.DataFrame,
+) -> dict[str, Any]:
+    expected = _expected_tuning_identities(config)
+    expected_run_dirs = {
+        _task_run_dir(
+            (
+                config,
+                identity[0],
+                identity[1],
+                identity[2],
+                str(root),
+                values,
+            )
+        ).resolve()
+        for identity, values in expected.items()
+    }
+    observed_run_dirs = {
+        path.resolve()
+        for path in (root / "runs").rglob("seed_*")
+        if path.is_dir()
+    }
+    if observed_run_dirs != expected_run_dirs:
+        raise AssertionError(
+            "tuning run-directory coverage mismatch; "
+            f"missing={len(expected_run_dirs - observed_run_dirs)} "
+            f"extra={len(observed_run_dirs - expected_run_dirs)}"
+        )
+    summary_required = {
+        "environment",
+        "condition",
+        "seed",
+        "candidate_alpha",
+        "base_alpha_multiplier",
+        "run_status",
+        "run_dir",
+    }
+    missing_summary = summary_required - set(summaries)
+    if missing_summary:
+        raise AssertionError(f"tuning summaries are missing {sorted(missing_summary)}")
+    missing_invalid = set(INVALID_TUNING_COLUMNS) - set(invalid)
+    if missing_invalid:
+        raise AssertionError(
+            f"invalid tuning candidate inventory is missing {sorted(missing_invalid)}"
+        )
+    current_commit = git_value("rev-parse", "HEAD")
+    valid_identities: set[tuple[str, str, int, str]] = set()
+    invalid_identities: set[tuple[str, str, int, str]] = set()
+    for row in summaries.itertuples(index=False):
+        identity = _tuning_identity(
+            row.environment, row.condition, int(row.seed), float(row.candidate_alpha)
+        )
+        if identity in valid_identities:
+            raise AssertionError(f"duplicate valid tuning identity {identity}")
+        if identity not in expected:
+            raise AssertionError(f"unexpected valid tuning identity {identity}")
+        expected_values = expected[identity]
+        if not np.isclose(
+            float(row.base_alpha_multiplier), expected_values["base_alpha_multiplier"]
+        ):
+            raise AssertionError(f"tuning multiplier mismatch for {identity}")
+        options = {
+            "candidate_alpha": expected_values["candidate_alpha"],
+            "base_alpha_multiplier": expected_values["base_alpha_multiplier"],
+        }
+        run_dir = _task_run_dir(
+            (
+                config,
+                identity[0],
+                identity[1],
+                identity[2],
+                str(root),
+                options,
+            )
+        )
+        if not _completed_run(
+            run_dir,
+            config,
+            (identity[0], identity[1], identity[2]),
+            options,
+            expected_commit=current_commit,
+        ):
+            raise AssertionError(f"invalid or incomplete valid tuning run {run_dir}")
+        valid_identities.add(identity)
+    for row in invalid.itertuples(index=False):
+        try:
+            identity = _tuning_identity(
+                row.environment, row.condition, int(row.seed), float(row.candidate_alpha)
+            )
+        except (TypeError, ValueError) as error:
+            raise AssertionError("invalid tuning inventory has an incomplete identity") from error
+        if identity in invalid_identities:
+            raise AssertionError(f"duplicate invalid tuning identity {identity}")
+        if identity not in expected:
+            raise AssertionError(f"unexpected invalid tuning identity {identity}")
+        expected_values = expected[identity]
+        if row.exit_status != "invalid":
+            raise AssertionError(f"invalid tuning inventory status mismatch for {identity}")
+        if not row.failure_classification or not row.metric:
+            raise AssertionError(f"invalid tuning failure evidence is incomplete for {identity}")
+        if not np.isfinite(float(row.threshold)) or int(row.interaction_index) < 0:
+            raise AssertionError(f"invalid tuning threshold/interaction is malformed for {identity}")
+        if not np.isclose(
+            float(row.base_alpha_multiplier), expected_values["base_alpha_multiplier"]
+        ):
+            raise AssertionError(f"invalid tuning multiplier mismatch for {identity}")
+        options = {
+            "candidate_alpha": expected_values["candidate_alpha"],
+            "base_alpha_multiplier": expected_values["base_alpha_multiplier"],
+        }
+        run_dir = _task_run_dir(
+            (
+                config,
+                identity[0],
+                identity[1],
+                identity[2],
+                str(root),
+                options,
+            )
+        )
+        expected_manifest = str((run_dir / "manifest.json").relative_to(root))
+        if str(row.manifest_path) != expected_manifest:
+            raise AssertionError(f"invalid tuning manifest path mismatch for {identity}")
+        if not _completed_invalid_tuning_run(
+            run_dir,
+            config,
+            (identity[0], identity[1], identity[2]),
+            options,
+            expected_commit=current_commit,
+        ):
+            raise AssertionError(f"incomplete invalid tuning evidence {run_dir}")
+        invalid_identities.add(identity)
+    overlap = valid_identities & invalid_identities
+    if overlap:
+        raise AssertionError(f"tuning identities are both valid and invalid: {sorted(overlap)}")
+    attempted = valid_identities | invalid_identities
+    missing = set(expected) - attempted
+    extra = attempted - set(expected)
+    if missing or extra:
+        raise AssertionError(
+            "tuning attempted identity coverage mismatch; "
+            f"missing={sorted(missing)[:10]} extra={sorted(extra)[:10]}"
+        )
+    eligible_alphas: dict[tuple[str, str], set[float]] = {}
+    pair_counts: dict[tuple[str, str], dict[str, int | bool]] = {}
+    for environment, specification in config["environments"].items():
+        base_alpha = float(specification.get("control_alpha", config["control_alpha"]))
+        alphas = candidate_alphas(
+            base_alpha, list(map(float, config["alpha_tuning"]["multipliers"]))
+        )
+        for condition in specification["conditions"]:
+            pair = (str(environment), str(condition))
+            eligible = {
+                float(alpha)
+                for alpha, _ in alphas
+                if all(
+                    _tuning_identity(environment, condition, int(seed), alpha)
+                    in valid_identities
+                    for seed in config["seeds"]
+                )
+            }
+            if not eligible:
+                raise AssertionError(
+                    f"no fully valid learning-rate candidate for {environment}/{condition}"
+                )
+            eligible_alphas[pair] = eligible
+            pair_valid = sum(
+                identity[0] == pair[0] and identity[1] == pair[1]
+                for identity in valid_identities
+            )
+            pair_invalid = sum(
+                identity[0] == pair[0] and identity[1] == pair[1]
+                for identity in invalid_identities
+            )
+            pair_expected = len(config["seeds"]) * len(alphas)
+            invalid_alpha_count = sum(
+                any(
+                    _tuning_identity(environment, condition, int(seed), alpha)
+                    in invalid_identities
+                    for seed in config["seeds"]
+                )
+                for alpha, _ in alphas
+            )
+            pair_counts[pair] = {
+                "valid_candidate_count": len(eligible),
+                "invalid_candidate_count": invalid_alpha_count,
+                "attempted_candidate_count": len(eligible) + invalid_alpha_count,
+                "expected_candidate_count": len(alphas),
+                "valid_attempt_count": pair_valid,
+                "invalid_attempt_count": pair_invalid,
+                "attempted_identity_count": pair_valid + pair_invalid,
+                "expected_identity_count": pair_expected,
+                "all_candidates_attempted": pair_valid + pair_invalid == pair_expected,
+            }
+    return {
+        "expected_attempts": len(expected),
+        "attempted_candidates": len(attempted),
+        "valid_runs": len(valid_identities),
+        "invalid_attempts": len(invalid_identities),
+        "eligible_alphas": eligible_alphas,
+        "pair_counts": pair_counts,
+    }
+
+
 def _file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -1260,6 +1699,17 @@ def aggregate_cross(
     if config is None:
         config = json.loads((root / "config.json").read_text(encoding="utf-8"))
     summaries = _read_many(sorted((root / "runs").rglob("summary.csv")))
+    invalid_tuning = pd.DataFrame(columns=INVALID_TUNING_COLUMNS)
+    if config.get("experiment_stage") == "lr_tune":
+        invalid_tuning = _read_invalid_tuning_attempts(root)
+        invalid_tuning.to_csv(root / "invalid_tuning_candidates.csv", index=False)
+        write_json(
+            root / "invalid_tuning_candidates.json",
+            json.loads(invalid_tuning.to_json(orient="records")),
+        )
+        if summaries.empty:
+            raise AssertionError("lr-tune has no fully valid learning-rate candidate")
+        _validate_tuning_attempt_coverage(root, config, summaries, invalid_tuning)
     representation = _read_many(
         sorted((root / "runs").rglob("representation_metrics.csv"))
     )
@@ -1310,7 +1760,7 @@ def aggregate_cross(
     grouped.columns = [f"{column}_{stat}" for column, stat in grouped.columns]
     grouped.copy().reset_index().to_csv(root / "condition_summary.csv", index=False)
     if config.get("experiment_stage") == "lr_tune":
-        selected = select_learning_rates(summaries, config)
+        selected = select_learning_rates(summaries, config, invalid_tuning)
         selected.to_csv(root / "selected_learning_rates.csv", index=False)
     make_cross_figures(root, summaries, representation, task, steps, decisions, updates)
     return summaries, representation
@@ -1330,10 +1780,11 @@ def validate_cross_results(root: str | Path, config: dict[str, Any]) -> dict[str
     root = Path(root)
     summaries = pd.read_csv(root / "aggregate_summary.csv")
     expected = expected_cross_run_count(config)
-    if len(summaries) != expected:
+    stage = config.get("experiment_stage", "fixed")
+    if stage != "lr_tune" and len(summaries) != expected:
         raise AssertionError(f"expected {expected} cross runs, found {len(summaries)}")
     identity = ["environment", "condition", "seed"]
-    if config.get("experiment_stage") == "lr_tune":
+    if stage == "lr_tune":
         identity.append("candidate_alpha")
     if summaries.duplicated(identity).any():
         raise AssertionError(f"duplicate {'/'.join(identity)} summaries")
@@ -1353,6 +1804,93 @@ def validate_cross_results(root: str | Path, config: dict[str, Any]) -> dict[str
         raise AssertionError("non-finite required cross-environment summary metrics")
     if not summaries["run_status"].isin(["ok", "valid"]).all():
         raise AssertionError("at least one cross-environment run failed")
+    if stage == "lr_tune":
+        invalid_csv_path = root / "invalid_tuning_candidates.csv"
+        invalid_json_path = root / "invalid_tuning_candidates.json"
+        if not invalid_csv_path.is_file() or not invalid_json_path.is_file():
+            raise AssertionError("lr-tune is missing the invalid candidate inventory")
+        invalid = _read_invalid_tuning_attempts(root)
+        persisted_invalid = pd.read_csv(invalid_csv_path)
+        persisted_json = json.loads(invalid_json_path.read_text(encoding="utf-8"))
+        if len(persisted_invalid) != len(invalid) or len(persisted_json) != len(invalid):
+            raise AssertionError("persisted invalid tuning inventory count mismatch")
+        try:
+            pd.testing.assert_frame_equal(
+                persisted_invalid.reset_index(drop=True),
+                invalid.reset_index(drop=True),
+                check_dtype=False,
+                check_exact=False,
+                rtol=1e-12,
+            )
+        except AssertionError as error:
+            raise AssertionError("persisted invalid tuning CSV content mismatch") from error
+        expected_json = json.loads(invalid.to_json(orient="records"))
+        if persisted_json != expected_json:
+            raise AssertionError("persisted invalid tuning JSON content mismatch")
+        coverage = _validate_tuning_attempt_coverage(root, config, summaries, invalid)
+        selected_path = root / "selected_learning_rates.csv"
+        if not selected_path.is_file():
+            raise AssertionError("lr-tune did not produce selected_learning_rates.csv")
+        selected = pd.read_csv(selected_path)
+        selected_required = {
+            "environment",
+            "condition",
+            "selected_alpha",
+            "valid_candidate_count",
+            "invalid_candidate_count",
+            "attempted_candidate_count",
+            "expected_candidate_count",
+            "valid_attempt_count",
+            "invalid_attempt_count",
+            "attempted_identity_count",
+            "expected_identity_count",
+            "all_candidates_attempted",
+        }
+        missing_selected = selected_required - set(selected)
+        if missing_selected:
+            raise AssertionError(
+                f"selected learning rates are missing {sorted(missing_selected)}"
+            )
+        expected_pairs = set(coverage["eligible_alphas"])
+        observed_pairs = {
+            (str(row.environment), str(row.condition))
+            for row in selected.itertuples(index=False)
+        }
+        if observed_pairs != expected_pairs or selected.duplicated(
+            ["environment", "condition"]
+        ).any():
+            raise AssertionError("selected learning-rate pair coverage mismatch")
+        for row in selected.itertuples(index=False):
+            pair = (str(row.environment), str(row.condition))
+            if not any(
+                np.isclose(float(row.selected_alpha), alpha)
+                for alpha in coverage["eligible_alphas"][pair]
+            ):
+                raise AssertionError(
+                    f"selected alpha is not a fully valid configured candidate for {pair}"
+                )
+            counts = coverage["pair_counts"][pair]
+            for column in (
+                "valid_candidate_count",
+                "invalid_candidate_count",
+                "attempted_candidate_count",
+                "expected_candidate_count",
+                "valid_attempt_count",
+                "invalid_attempt_count",
+                "attempted_identity_count",
+                "expected_identity_count",
+            ):
+                if int(getattr(row, column)) != int(counts[column]):
+                    raise AssertionError(f"selected learning-rate {column} mismatch for {pair}")
+            if bool(row.all_candidates_attempted) is not True:
+                raise AssertionError(f"selected learning-rate attempts are incomplete for {pair}")
+        return {
+            "result_dir": str(root.resolve()),
+            "expected_attempts": int(coverage["expected_attempts"]),
+            "attempted_candidates": int(coverage["attempted_candidates"]),
+            "valid_runs": int(coverage["valid_runs"]),
+            "invalid_attempts": int(coverage["invalid_attempts"]),
+        }
     for run_dir in sorted(path for path in (root / "runs").rglob("seed_*") if path.is_dir()):
         run_config = json.loads((run_dir / "config.json").read_text(encoding="utf-8"))
         missing = sorted(required_run_entries(run_config) - {path.name for path in run_dir.iterdir()})
@@ -1474,6 +2012,18 @@ def build_cross_tasks(
     return tasks
 
 
+def _completed_task_status(task: tuple[Any, ...]) -> str | None:
+    config, environment, condition, seed, _, options = _task_parts(task)
+    run_dir = _task_run_dir(task)
+    if _completed_run(run_dir, config, (environment, condition, seed), options):
+        return "valid"
+    if _completed_invalid_tuning_run(
+        run_dir, config, (environment, condition, seed), options
+    ):
+        return "invalid"
+    return None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True)
@@ -1542,13 +2092,15 @@ def main() -> None:
         retry_failed=args.retry_failed,
     )
     if args.dry_run:
+        task_states = [_completed_task_status(task) for task in tasks]
         states = {
-            "expected_runs": len(tasks),
-            "completed_runs": sum(_completed_run(_task_run_dir(task)) for task in tasks),
+            "expected_attempts" if config.get("experiment_stage") == "lr_tune" else "expected_runs": len(tasks),
+            "completed_valid_runs": sum(state == "valid" for state in task_states),
+            "completed_invalid_attempts": sum(state == "invalid" for state in task_states),
             "pending_runs": sum(not _task_run_dir(task).exists() for task in tasks),
             "existing_incomplete_or_failed_runs": sum(
-                _task_run_dir(task).exists() and not _completed_run(_task_run_dir(task))
-                for task in tasks
+                _task_run_dir(task).exists() and state is None
+                for task, state in zip(tasks, task_states, strict=True)
             ),
         }
         print(json.dumps(states, sort_keys=True))
@@ -1591,10 +2143,10 @@ def main() -> None:
     workers = min(requested_workers, len(tasks), cpu_count())
     try:
         if workers == 1:
-            list(map(run_cross_one, tasks))
+            list(map(run_cross_worker, tasks))
         else:
             with Pool(workers) as pool:
-                pool.map(run_cross_one, tasks)
+                pool.map(run_cross_worker, tasks)
         aggregate_cross(root, config)
         if config["profile"] == "cross_smoke" and not any((environments, conditions, seeds)):
             smoke_cross_assertions(root, config)

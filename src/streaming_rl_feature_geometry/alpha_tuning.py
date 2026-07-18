@@ -45,9 +45,11 @@ def candidate_alphas(base_alpha: float, multipliers: list[float]) -> list[tuple[
 
 
 def select_learning_rates(
-    summaries: pd.DataFrame, config: Mapping[str, Any]
+    summaries: pd.DataFrame,
+    config: Mapping[str, Any],
+    invalid_candidates: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Select one alpha per environment/condition using tuning data only."""
+    """Select one fully valid alpha per environment/condition using tuning data only."""
 
     required = {
         "environment",
@@ -67,6 +69,31 @@ def select_learning_rates(
     observed = set(map(int, summaries["seed"].unique()))
     if not observed <= allowed:
         raise ValueError(f"alpha selection received non-tuning seeds: {sorted(observed - allowed)}")
+    invalid = invalid_candidates if invalid_candidates is not None else pd.DataFrame()
+    if not invalid.empty:
+        invalid_required = {"environment", "condition", "seed", "candidate_alpha"}
+        invalid_missing = invalid_required - set(invalid)
+        if invalid_missing:
+            raise ValueError(
+                f"invalid tuning candidates are missing {sorted(invalid_missing)}"
+            )
+        invalid_seeds = set(map(int, invalid["seed"].unique()))
+        if not invalid_seeds <= allowed:
+            raise ValueError(
+                "invalid alpha selection evidence contains non-tuning seeds: "
+                f"{sorted(invalid_seeds - allowed)}"
+            )
+    invalid_alpha_keys = {
+        (str(row.environment), str(row.condition), float(row.candidate_alpha))
+        for row in invalid.itertuples(index=False)
+    }
+    eligible = summaries.loc[
+        [
+            (str(row.environment), str(row.condition), float(row.candidate_alpha))
+            not in invalid_alpha_keys
+            for row in summaries.itertuples(index=False)
+        ]
+    ].copy()
     tuning = config.get("alpha_tuning", {})
     criterion = str(tuning.get("selection_criterion", "robust_score"))
     if criterion not in {"mean", "median", "iqm", "robust_score"}:
@@ -79,7 +106,7 @@ def select_learning_rates(
         )
     )
     rows: list[dict[str, Any]] = []
-    for (environment, condition, alpha, multiplier), frame in summaries.groupby(
+    for (environment, condition, alpha, multiplier), frame in eligible.groupby(
         ["environment", "condition", "candidate_alpha", "base_alpha_multiplier"],
         sort=False,
     ):
@@ -113,6 +140,24 @@ def select_learning_rates(
             }
         )
     candidates = pd.DataFrame(rows)
+    all_pairs = {
+        (str(row.environment), str(row.condition))
+        for row in summaries.itertuples(index=False)
+    } | {
+        (str(row.environment), str(row.condition))
+        for row in invalid.itertuples(index=False)
+    }
+    eligible_pairs = (
+        set(zip(candidates["environment"], candidates["condition"], strict=False))
+        if not candidates.empty
+        else set()
+    )
+    missing_pairs = sorted(all_pairs - eligible_pairs)
+    if missing_pairs:
+        raise ValueError(
+            "no fully valid learning-rate candidate for environment/condition pairs: "
+            f"{missing_pairs}"
+        )
     selected: list[dict[str, Any]] = []
     for _, frame in candidates.groupby(["environment", "condition"], sort=False):
         winner = frame.sort_values(
@@ -126,6 +171,55 @@ def select_learning_rates(
             kind="stable",
         ).iloc[0].to_dict()
         winner["selected_alpha"] = winner["candidate_alpha"]
+        pair = (str(winner["environment"]), str(winner["condition"]))
+        valid_attempt_count = int(
+            (
+                (summaries["environment"].astype(str) == pair[0])
+                & (summaries["condition"].astype(str) == pair[1])
+            ).sum()
+        )
+        invalid_attempt_count = int(
+            (
+                (invalid["environment"].astype(str) == pair[0])
+                & (invalid["condition"].astype(str) == pair[1])
+            ).sum()
+        ) if not invalid.empty else 0
+        configured_seeds = list(config.get("seeds", seed_sets["tuning"]))
+        multipliers = list(config.get("alpha_tuning", {}).get("multipliers", []))
+        expected_identity_count = (
+            len(configured_seeds) * len(multipliers)
+            if multipliers
+            else valid_attempt_count + invalid_attempt_count
+        )
+        eligible_alpha_count = int(
+            frame["candidate_alpha"].astype(float).nunique()
+        )
+        invalid_alpha_count = len(
+            {
+                float(row.candidate_alpha)
+                for row in invalid.itertuples(index=False)
+                if str(row.environment) == pair[0] and str(row.condition) == pair[1]
+            }
+        )
+        winner.update(
+            valid_candidate_count=eligible_alpha_count,
+            invalid_candidate_count=invalid_alpha_count,
+            attempted_candidate_count=eligible_alpha_count + invalid_alpha_count,
+            expected_candidate_count=(
+                len(multipliers)
+                if multipliers
+                else eligible_alpha_count + invalid_alpha_count
+            ),
+            valid_attempt_count=valid_attempt_count,
+            invalid_attempt_count=invalid_attempt_count,
+            attempted_identity_count=valid_attempt_count + invalid_attempt_count,
+            expected_identity_count=expected_identity_count,
+            all_candidates_attempted=(
+                valid_attempt_count + invalid_attempt_count == expected_identity_count
+            ),
+            eligible_candidate_alpha_count=eligible_alpha_count,
+            invalid_candidate_alpha_count=invalid_alpha_count,
+        )
         selected.append(winner)
     return pd.DataFrame(selected)
 
